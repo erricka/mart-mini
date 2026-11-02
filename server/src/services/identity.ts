@@ -4,6 +4,7 @@ import { config } from '../config.js';
 import { db } from '../db/client.js';
 import { coupons, customerRewards, staffLoginTokens, users, welcomeGrants, type User } from '../db/schema.js';
 import { badRequest, forbidden, unauthorized } from '../lib/errors.js';
+import { parseLang, tr } from '../lib/i18n.js';
 import { normalizePhone, type NormalizedPhone } from '../lib/phone.js';
 import { TelegramAuthError, validateContactResponse, type TelegramUser } from '../lib/telegram-auth.js';
 import { applyPoints, rewardExpiry, serializeCoupon, syncMilestones } from './loyalty.js';
@@ -38,7 +39,6 @@ export async function resolveTelegramIdentity(tg: TelegramUser, startParam: stri
       .set({
         username: tg.username ?? null,
         photoUrl: tg.photo_url ?? existing.photoUrl,
-        languageCode: tg.language_code ?? existing.languageCode,
         lastSeenAt: now,
         role: isAdminTelegramId(tg.id) ? 'admin' : existing.role,
       })
@@ -56,7 +56,6 @@ export async function resolveTelegramIdentity(tg: TelegramUser, startParam: stri
         lastName: tg.last_name ?? null,
         username: tg.username ?? null,
         photoUrl: tg.photo_url ?? null,
-        languageCode: tg.language_code ?? null,
         role: 'admin',
         privacyAcceptedAt: now,
         signupSource: 'admin',
@@ -87,6 +86,8 @@ export interface CompleteOnboardingInput {
   phone?: string | null;
   contactResponse?: string | null;
   acceptPrivacy: boolean;
+  /** App language chosen on the first screen (km | en). */
+  languageCode?: string | null;
 }
 
 export function resolvePhoneInput(
@@ -102,14 +103,14 @@ export function resolvePhoneInput(
     } catch (err) {
       throw badRequest(
         'contact_unverified',
-        "We couldn't verify the shared contact. Please type your number instead.",
+        tr('err.contact_unverified'),
         err instanceof Error ? err.message : undefined,
       );
     }
   }
   if (input.phone && input.phone.trim()) {
     const phone = normalizePhone(input.phone);
-    if (!phone) throw badRequest('invalid_phone', 'Please enter a valid phone number (7–15 digits).');
+    if (!phone) throw badRequest('invalid_phone', tr('err.invalid_phone'));
     return { phone, verified: false };
   }
   return { phone: null, verified: false };
@@ -121,9 +122,9 @@ export function resolvePhoneInput(
  * also limited to one per phone number.
  */
 export async function completeOnboarding(identity: OnboardingIdentity, input: CompleteOnboardingInput) {
-  if (input.acceptPrivacy !== true) throw badRequest('privacy_required', 'Please accept the privacy notice to continue.');
+  if (input.acceptPrivacy !== true) throw badRequest('privacy_required', tr('err.privacy_required'));
   const firstName = input.firstName.trim();
-  if (!firstName) throw badRequest('name_required', 'Please tell us your name.');
+  if (!firstName) throw badRequest('name_required', tr('err.name_required'));
   const { phone, verified } = resolvePhoneInput(identity.telegramId, input);
 
   return db.transaction(async (tx) => {
@@ -136,7 +137,7 @@ export async function completeOnboarding(identity: OnboardingIdentity, input: Co
         lastName: input.lastName?.trim().slice(0, 64) || null,
         username: identity.username,
         photoUrl: identity.photoUrl,
-        languageCode: identity.languageCode,
+        languageCode: parseLang(input.languageCode) ?? null,
         phone: phone?.display ?? null,
         phoneVerified: verified,
         privacyAcceptedAt: now,
@@ -220,6 +221,7 @@ export function publicUser(u: User) {
     phoneVerified: u.phoneVerified,
     role: u.role,
     pointsBalance: u.pointsBalance,
+    languageCode: u.languageCode,
     createdAt: u.createdAt,
   };
 }
@@ -247,7 +249,7 @@ export async function consumeStaffLoginToken(token: string) {
       and(eq(staffLoginTokens.tokenHash, hashToken(token)), isNull(staffLoginTokens.usedAt), gt(staffLoginTokens.expiresAt, new Date())),
     )
     .returning({ userId: staffLoginTokens.userId });
-  if (!row) throw unauthorized('This login link is invalid or has expired. Send /dashboard to the bot for a new one.');
+  if (!row) throw unauthorized(tr('err.staff_link_invalid'));
   const [user] = await db.select().from(users).where(eq(users.id, row.userId));
   if (!user || (user.role !== 'staff' && user.role !== 'admin')) throw forbidden();
   return user;

@@ -5,13 +5,16 @@ import { Badge, Button, Card, cx, EmptyState, ErrorState, Field, Input, Notice, 
 import { api, errorMessage } from '../../lib/api';
 import { dateTime, fromCents, money, toCents } from '../../lib/format';
 import { toast } from '../../lib/toast';
+import { translate, useT, type TKey } from '../../lib/i18n';
 import { PageHeader, Td, Th } from './common';
 
 interface AdminProduct {
   id: number;
   categoryId: number;
   name: string;
+  nameEn: string | null;
   description: string;
+  descriptionEn: string | null;
   unit: string;
   priceCents: number;
   compareAtCents: number | null;
@@ -25,6 +28,7 @@ interface AdminProduct {
 interface AdminCategory {
   id: number;
   name: string;
+  nameEn: string | null;
   slug: string;
   emoji: string;
   color: string;
@@ -36,13 +40,14 @@ interface AdminCategory {
 const useAdminCategories = () => useQuery({ queryKey: ['admin', 'categories'], queryFn: () => api<{ categories: AdminCategory[] }>('/admin/categories').then((r) => r.categories) });
 
 export function ProductsPage() {
+  const { t } = useT();
   const [tab, setTab] = useState<'products' | 'categories'>('products');
   return (
     <div>
-      <PageHeader title="Catalog" subtitle="Products, prices, photos and stock. Changes show in the shop immediately." />
+      <PageHeader title={t('ap.title')} subtitle={t('ap.subtitle')} />
       <div className="mb-4 flex gap-2">
-        {(['products', 'categories'] as const).map((t) => (
-          <button key={t} onClick={() => setTab(t)} className={cx('rounded-full px-4 py-1.5 text-sm font-semibold capitalize', tab === t ? 'bg-ink text-bg' : 'bg-surface ring-1 ring-line')}>{t}</button>
+        {(['products', 'categories'] as const).map((k) => (
+          <button key={k} onClick={() => setTab(k)} className={cx('rounded-full px-4 py-1.5 text-sm font-semibold', tab === k ? 'bg-ink text-bg' : 'bg-surface ring-1 ring-line')}>{t(k === 'products' ? 'ap.tab_products' : 'ap.tab_categories')}</button>
         ))}
       </div>
       {tab === 'products' ? <Products /> : <Categories />}
@@ -51,6 +56,7 @@ export function ProductsPage() {
 }
 
 function Products() {
+  const { t } = useT();
   const [q, setQ] = useState('');
   const [categoryId, setCategoryId] = useState('');
   const [stock, setStock] = useState<'all' | 'low' | 'out'>('all');
@@ -70,25 +76,25 @@ function Products() {
   return (
     <>
       <div className="mb-4 flex flex-wrap items-center gap-2">
-        <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search products" className="max-w-56 py-2" />
-        <Select value={categoryId} onChange={(e) => setCategoryId(e.target.value)} className="max-w-48 py-2">
-          <option value="">All categories</option>
+        <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder={t('ap.search')} className="max-w-56 py-2" />
+        <Select value={categoryId} onChange={(e) => setCategoryId(e.target.value)} className="max-w-56 py-2">
+          <option value="">{t('ap.all_categories')}</option>
           {cats.data?.map((c) => <option key={c.id} value={c.id}>{c.emoji} {c.name}</option>)}
         </Select>
         {(['all', 'low', 'out'] as const).map((s) => (
           <button key={s} onClick={() => setStock(s)} className={cx('rounded-full px-3 py-1.5 text-sm font-semibold', stock === s ? 'bg-ink text-bg' : 'bg-surface ring-1 ring-line')}>
-            {s === 'all' ? `All (${list.data?.summary.total ?? '…'})` : s === 'low' ? `Low stock (${list.data?.summary.low ?? 0})` : `Out of stock (${list.data?.summary.out ?? 0})`}
+            {s === 'all' ? t('ap.filter_all', { n: list.data?.summary.total ?? '…' }) : s === 'low' ? t('ap.filter_low', { n: list.data?.summary.low ?? 0 }) : t('ap.filter_out', { n: list.data?.summary.out ?? 0 })}
           </button>
         ))}
-        <Button className="ml-auto" onClick={() => setEditing({ active: true, emoji: '🛒', categoryId: cats.data?.[0]?.id })}>+ New product</Button>
+        <Button className="ml-auto" onClick={() => setEditing({ active: true, emoji: '🛒', categoryId: cats.data?.[0]?.id })}>{t('ap.new_product')}</Button>
       </div>
 
       {list.isLoading ? <Skeleton className="h-96" /> : list.error ? <ErrorState error={list.error} onRetry={() => list.refetch()} /> : list.data!.products.length === 0 ? (
-        <EmptyState emoji="📦" title="No products match" />
+        <EmptyState emoji="📦" title={t('ap.no_match')} />
       ) : (
         <Card className="overflow-x-auto p-0">
           <table className="w-full text-sm">
-            <thead className="border-b border-line"><tr><Th>Product</Th><Th className="hidden md:table-cell">Category</Th><Th>Price</Th><Th>Stock</Th><Th className="hidden sm:table-cell">Status</Th><Th /></tr></thead>
+            <thead className="border-b border-line"><tr><Th>{t('ap.col_product')}</Th><Th className="hidden md:table-cell">{t('ap.col_category')}</Th><Th>{t('ap.col_price')}</Th><Th>{t('ap.col_stock')}</Th><Th className="hidden sm:table-cell">{t('ap.col_status')}</Th><Th /></tr></thead>
             <tbody className="divide-y divide-line">
               {list.data!.products.map((p) => {
                 const c = catOf(p.categoryId);
@@ -97,7 +103,7 @@ function Products() {
                     <Td>
                       <div className="flex items-center gap-3">
                         <div className="w-11 shrink-0"><ProductImage emoji={p.emoji} imageUrl={p.imageUrl} color={c?.color} size="sm" /></div>
-                        <div className="min-w-0"><div className="font-semibold">{p.name}</div><div className="text-xs text-muted">{p.unit}</div></div>
+                        <div className="min-w-0"><div className="font-semibold">{p.name}</div><div className="text-xs text-muted">{[p.nameEn, p.unit].filter(Boolean).join(' · ')}</div></div>
                       </div>
                     </Td>
                     <Td className="hidden md:table-cell">{c ? `${c.emoji} ${c.name}` : '—'}</Td>
@@ -109,11 +115,11 @@ function Products() {
                     </Td>
                     <Td className="hidden sm:table-cell">
                       <div className="flex flex-wrap gap-1">
-                        <Badge className={p.active ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-700'}>{p.active ? 'Visible' : 'Hidden'}</Badge>
-                        {p.featured && <Badge className="bg-amber-100 text-amber-900">⭐ Featured</Badge>}
+                        <Badge className={p.active ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-700'}>{p.active ? t('ap.visible') : t('ap.hidden')}</Badge>
+                        {p.featured && <Badge className="bg-amber-100 text-amber-900">{t('ap.featured')}</Badge>}
                       </div>
                     </Td>
-                    <Td className="text-right"><Button size="sm" variant="secondary" onClick={() => setEditing(p)}>Edit</Button></Td>
+                    <Td className="text-right"><Button size="sm" variant="secondary" onClick={() => setEditing(p)}>{t('common.edit')}</Button></Td>
                   </tr>
                 );
               })}
@@ -128,6 +134,7 @@ function Products() {
 }
 
 function ProductEditor({ product, categories, onClose }: { product: Partial<AdminProduct> | null; categories: AdminCategory[]; onClose: () => void }) {
+  const { t } = useT();
   const qc = useQueryClient();
   const fileRef = useRef<HTMLInputElement>(null);
   const [form, setForm] = useState<Record<string, any>>({});
@@ -144,7 +151,9 @@ function ProductEditor({ product, categories, onClose }: { product: Partial<Admi
       const body = {
         categoryId: Number(form.categoryId),
         name: form.name ?? '',
+        nameEn: form.nameEn || null,
         description: form.description ?? '',
+        descriptionEn: form.descriptionEn || null,
         unit: form.unit ?? '',
         priceCents: priceCents ?? 0,
         compareAtCents: form.compareAt ? toCents(form.compareAt) : null,
@@ -158,7 +167,7 @@ function ProductEditor({ product, categories, onClose }: { product: Partial<Admi
       return form.id ? api(`/admin/products/${form.id}`, { method: 'PUT', body }) : api('/admin/products', { body });
     },
     onSuccess: () => {
-      toast('Product saved ✓', 'success');
+      toast(t('ap.saved'), 'success');
       qc.invalidateQueries({ queryKey: ['admin', 'products'] });
       qc.invalidateQueries({ queryKey: ['products'] });
       onClose();
@@ -180,38 +189,41 @@ function ProductEditor({ product, categories, onClose }: { product: Partial<Admi
   }
   const cat = categories.find((c) => c.id === Number(form.categoryId));
   return (
-    <Sheet open={!!product} onClose={onClose} title={form.id ? 'Edit product' : 'New product'} wide>
+    <Sheet open={!!product} onClose={onClose} title={form.id ? t('ap.edit_product') : t('ap.new_product_title')} wide>
       <div className="grid gap-4 sm:grid-cols-[160px_1fr]">
         <div>
           <ProductImage emoji={form.emoji || '🛒'} imageUrl={form.imageUrl} color={cat?.color} />
           <input ref={fileRef} type="file" accept="image/jpeg,image/png,image/webp" hidden onChange={(e) => e.target.files?.[0] && upload(e.target.files[0])} />
-          <Button size="sm" variant="secondary" block className="mt-2" loading={uploading} onClick={() => fileRef.current?.click()}>📷 Upload photo</Button>
-          {form.imageUrl && <button className="mt-1 w-full text-xs text-muted underline" onClick={() => setForm({ ...form, imageUrl: null })}>Remove photo</button>}
+          <Button size="sm" variant="secondary" block className="mt-2" loading={uploading} onClick={() => fileRef.current?.click()}>{t('ap.upload')}</Button>
+          {form.imageUrl && <button className="mt-1 w-full text-xs text-muted underline" onClick={() => setForm({ ...form, imageUrl: null })}>{t('ap.remove_photo')}</button>}
         </div>
         <div className="grid gap-3 sm:grid-cols-2">
-          <div className="sm:col-span-2"><Field label="Name"><Input value={form.name ?? ''} onChange={set('name')} /></Field></div>
-          <Field label="Category">
+          <Field label={t('ap.name')}><Input value={form.name ?? ''} onChange={set('name')} /></Field>
+          <Field label={t('ap.name_en')}><Input value={form.nameEn ?? ''} onChange={set('nameEn')} /></Field>
+          <Field label={t('ap.category')}>
             <Select value={form.categoryId ?? ''} onChange={set('categoryId')}>{categories.map((c) => <option key={c.id} value={c.id}>{c.emoji} {c.name}</option>)}</Select>
           </Field>
-          <Field label="Unit / size"><Input value={form.unit ?? ''} onChange={set('unit')} placeholder="e.g. 1 kg, 6 pack" /></Field>
-          <Field label="Price" error={form.price && priceCents == null ? 'Enter a valid price' : null}><Input inputMode="decimal" value={form.price ?? ''} onChange={set('price')} placeholder="0.00" /></Field>
-          <Field label="Was (promo, optional)" hint="Shown struck through when higher than the price."><Input inputMode="decimal" value={form.compareAt ?? ''} onChange={set('compareAt')} placeholder="0.00" /></Field>
-          <Field label="Emoji (used when there is no photo)"><Input value={form.emoji ?? ''} onChange={set('emoji')} maxLength={8} /></Field>
-          {!form.id && <Field label="Starting stock"><Input inputMode="numeric" value={form.initialStock ?? '0'} onChange={set('initialStock')} /></Field>}
-          <div className="sm:col-span-2"><Field label="Description"><Textarea value={form.description ?? ''} onChange={set('description')} /></Field></div>
-          <div className="sm:col-span-2"><Field label="Search tags" hint="Extra words customers might search for."><Input value={form.tags ?? ''} onChange={set('tags')} placeholder="fruit, organic" /></Field></div>
+          <Field label={t('ap.unit')}><Input value={form.unit ?? ''} onChange={set('unit')} placeholder={t('ap.unit_ph')} /></Field>
+          <Field label={t('ap.price')} error={form.price && priceCents == null ? t('ap.price_invalid') : null}><Input inputMode="decimal" value={form.price ?? ''} onChange={set('price')} placeholder="0.00" /></Field>
+          <Field label={t('ap.was')} hint={t('ap.was_hint')}><Input inputMode="decimal" value={form.compareAt ?? ''} onChange={set('compareAt')} placeholder="0.00" /></Field>
+          <Field label={t('ap.emoji')}><Input value={form.emoji ?? ''} onChange={set('emoji')} maxLength={8} /></Field>
+          {!form.id && <Field label={t('ap.start_stock')}><Input inputMode="numeric" value={form.initialStock ?? '0'} onChange={set('initialStock')} /></Field>}
+          <div className="sm:col-span-2"><Field label={t('ap.description')}><Textarea value={form.description ?? ''} onChange={set('description')} /></Field></div>
+          <div className="sm:col-span-2"><Field label={t('ap.description_en')}><Textarea value={form.descriptionEn ?? ''} onChange={set('descriptionEn')} /></Field></div>
+          <div className="sm:col-span-2"><Field label={t('ap.tags')} hint={t('ap.tags_hint')}><Input value={form.tags ?? ''} onChange={set('tags')} placeholder={t('ap.tags_ph')} /></Field></div>
           <div className="sm:col-span-2 divide-y divide-line rounded-2xl bg-surface-2 px-4">
-            <Toggle checked={form.active ?? true} onChange={(v) => setForm({ ...form, active: v })} label="Visible in shop" />
-            <Toggle checked={form.featured ?? false} onChange={(v) => setForm({ ...form, featured: v })} label="Featured on home" hint="Shows under “Popular picks”." />
+            <Toggle checked={form.active ?? true} onChange={(v) => setForm({ ...form, active: v })} label={t('ap.visible_toggle')} />
+            <Toggle checked={form.featured ?? false} onChange={(v) => setForm({ ...form, featured: v })} label={t('ap.featured_toggle')} hint={t('ap.featured_hint')} />
           </div>
         </div>
       </div>
-      <Button block size="lg" className="mt-5" loading={save.isPending} disabled={!form.name || priceCents == null || !form.categoryId} onClick={() => save.mutate()}>Save product</Button>
+      <Button block size="lg" className="mt-5" loading={save.isPending} disabled={!form.name || priceCents == null || !form.categoryId} onClick={() => save.mutate()}>{t('ap.save')}</Button>
     </Sheet>
   );
 }
 
 function StockSheet({ product, onClose }: { product: AdminProduct | null; onClose: () => void }) {
+  const { t } = useT();
   const qc = useQueryClient();
   const [mode, setMode] = useState<'add' | 'set'>('add');
   const [qty, setQty] = useState('');
@@ -224,7 +236,7 @@ function StockSheet({ product, onClose }: { product: AdminProduct | null; onClos
   const save = useMutation({
     mutationFn: () => api(`/admin/products/${product!.id}/stock`, { body: { mode, quantity: Number(qty), note: note || null } }),
     onSuccess: () => {
-      toast('Stock updated ✓', 'success');
+      toast(t('ap.stock_saved'), 'success');
       qc.invalidateQueries({ queryKey: ['admin', 'products'] });
       qc.invalidateQueries({ queryKey: ['admin', 'movements'] });
       qc.invalidateQueries({ queryKey: ['products'] });
@@ -238,25 +250,25 @@ function StockSheet({ product, onClose }: { product: AdminProduct | null; onClos
   const n = Number(qty);
   const result = mode === 'set' ? n : product.stock + n;
   return (
-    <Sheet open onClose={onClose} title={`Stock · ${product.name}`}>
-      <div className="mb-3 text-center"><div className="text-4xl font-black">{product.stock}</div><div className="text-sm text-muted">in stock now</div></div>
+    <Sheet open onClose={onClose} title={t('ap.stock_title', { name: product.name })}>
+      <div className="mb-3 text-center"><div className="text-4xl font-black">{product.stock}</div><div className="text-sm text-muted">{t('ap.in_stock_now')}</div></div>
       <div className="mb-3 grid grid-cols-2 gap-2">
-        <Button variant={mode === 'add' ? 'primary' : 'secondary'} onClick={() => setMode('add')}>➕ Delivery / adjust</Button>
-        <Button variant={mode === 'set' ? 'primary' : 'secondary'} onClick={() => setMode('set')}>🔢 Stock count</Button>
+        <Button variant={mode === 'add' ? 'primary' : 'secondary'} onClick={() => setMode('add')}>{t('ap.mode_add')}</Button>
+        <Button variant={mode === 'set' ? 'primary' : 'secondary'} onClick={() => setMode('set')}>{t('ap.mode_set')}</Button>
       </div>
       <div className="space-y-3">
-        <Field label={mode === 'add' ? 'Quantity to add (negative to remove)' : 'Counted quantity on the shelf'}>
-          <Input inputMode="numeric" value={qty} onChange={(e) => setQty(e.target.value)} placeholder={mode === 'add' ? 'e.g. 24 or -2' : 'e.g. 18'} />
+        <Field label={mode === 'add' ? t('ap.qty_add') : t('ap.qty_set')}>
+          <Input inputMode="numeric" value={qty} onChange={(e) => setQty(e.target.value)} placeholder={mode === 'add' ? t('ap.qty_add_ph') : t('ap.qty_set_ph')} />
         </Field>
-        <Field label="Note (optional)"><Input value={note} onChange={(e) => setNote(e.target.value)} placeholder="e.g. Supplier delivery, damaged items" /></Field>
-        {qty !== '' && Number.isInteger(n) && (result < 0 ? <Notice tone="error">Stock can't go below zero.</Notice> : <Notice tone="info">New stock will be <b>{result}</b>.</Notice>)}
-        <Button block loading={save.isPending} disabled={qty === '' || !Number.isInteger(n) || result < 0} onClick={() => save.mutate()}>Save</Button>
+        <Field label={t('ap.note')}><Input value={note} onChange={(e) => setNote(e.target.value)} placeholder={t('ap.note_ph')} /></Field>
+        {qty !== '' && Number.isInteger(n) && (result < 0 ? <Notice tone="error">{t('ap.below_zero')}</Notice> : <Notice tone="info">{t('ap.new_stock', { n: result })}</Notice>)}
+        <Button block loading={save.isPending} disabled={qty === '' || !Number.isInteger(n) || result < 0} onClick={() => save.mutate()}>{t('common.save')}</Button>
       </div>
-      <h3 className="mb-2 mt-5 text-sm font-bold">Recent movements</h3>
+      <h3 className="mb-2 mt-5 text-sm font-bold">{t('ap.movements')}</h3>
       <ul className="max-h-48 space-y-1 overflow-y-auto text-xs">
         {moves.data?.map((m) => (
           <li key={m.id} className="flex justify-between gap-2">
-            <span className="text-muted">{dateTime(m.createdAt)} · {m.reason}{m.orderId ? ` #${String(m.orderId).padStart(4, '0')}` : ''}{m.note ? ` · ${m.note}` : ''}</span>
+            <span className="text-muted">{dateTime(m.createdAt)} · {translate(`ap.reason_${m.reason}` as TKey)}{m.orderId ? ` #${String(m.orderId).padStart(4, '0')}` : ''}{m.note ? ` · ${m.note}` : ''}</span>
             <span className={cx('font-bold', m.delta > 0 ? 'text-emerald-600' : 'text-rose-600')}>{m.delta > 0 ? '+' : ''}{m.delta} → {m.stockAfter}</span>
           </li>
         ))}
@@ -266,16 +278,17 @@ function StockSheet({ product, onClose }: { product: AdminProduct | null; onClos
 }
 
 function Categories() {
+  const { t } = useT();
   const qc = useQueryClient();
   const cats = useAdminCategories();
   const [editing, setEditing] = useState<Partial<AdminCategory> | null>(null);
   const save = useMutation({
     mutationFn: (c: Partial<AdminCategory>) => {
-      const body = { name: c.name, emoji: c.emoji || '🛒', color: c.color || '#22c55e', sortOrder: Number(c.sortOrder) || 0, active: c.active ?? true };
+      const body = { name: c.name, nameEn: c.nameEn || null, emoji: c.emoji || '🛒', color: c.color || '#22c55e', sortOrder: Number(c.sortOrder) || 0, active: c.active ?? true };
       return c.id ? api(`/admin/categories/${c.id}`, { method: 'PUT', body }) : api('/admin/categories', { body });
     },
     onSuccess: () => {
-      toast('Category saved ✓', 'success');
+      toast(t('ap.cat_saved'), 'success');
       qc.invalidateQueries({ queryKey: ['admin', 'categories'] });
       qc.invalidateQueries({ queryKey: ['categories'] });
       setEditing(null);
@@ -286,27 +299,28 @@ function Categories() {
   if (cats.error) return <ErrorState error={cats.error} onRetry={() => cats.refetch()} />;
   return (
     <>
-      <div className="mb-3 flex justify-end"><Button onClick={() => setEditing({ emoji: '🛒', color: '#22c55e', active: true, sortOrder: (cats.data?.length ?? 0) })}>+ New category</Button></div>
+      <div className="mb-3 flex justify-end"><Button onClick={() => setEditing({ emoji: '🛒', color: '#22c55e', active: true, sortOrder: (cats.data?.length ?? 0) })}>{t('ap.new_category')}</Button></div>
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
         {cats.data!.map((c) => (
           <Card key={c.id} className={cx('flex items-center gap-3', !c.active && 'opacity-60')}>
             <div className="grid h-12 w-12 place-items-center rounded-2xl text-2xl" style={{ background: `${c.color}26` }}>{c.emoji}</div>
-            <div className="min-w-0 flex-1"><div className="font-bold">{c.name}</div><div className="text-xs text-muted">{c.productCount} products{!c.active ? ' · hidden' : ''}</div></div>
-            <Button size="sm" variant="secondary" onClick={() => setEditing(c)}>Edit</Button>
+            <div className="min-w-0 flex-1"><div className="font-bold">{c.name}</div><div className="text-xs text-muted">{c.nameEn ? `${c.nameEn} · ` : ''}{t('ap.cat_products', { n: c.productCount })}{!c.active ? t('ap.cat_hidden') : ''}</div></div>
+            <Button size="sm" variant="secondary" onClick={() => setEditing(c)}>{t('common.edit')}</Button>
           </Card>
         ))}
       </div>
-      <Sheet open={!!editing} onClose={() => setEditing(null)} title={editing?.id ? 'Edit category' : 'New category'}>
+      <Sheet open={!!editing} onClose={() => setEditing(null)} title={editing?.id ? t('ap.edit_category') : t('ap.new_category_title')}>
         {editing && (
           <div className="space-y-3">
-            <Field label="Name"><Input value={editing.name ?? ''} onChange={(e) => setEditing({ ...editing, name: e.target.value })} /></Field>
+            <Field label={t('ap.cat_name')}><Input value={editing.name ?? ''} onChange={(e) => setEditing({ ...editing, name: e.target.value })} /></Field>
+            <Field label={t('ap.cat_name_en')}><Input value={editing.nameEn ?? ''} onChange={(e) => setEditing({ ...editing, nameEn: e.target.value })} /></Field>
             <div className="grid grid-cols-3 gap-3">
-              <Field label="Emoji"><Input value={editing.emoji ?? ''} onChange={(e) => setEditing({ ...editing, emoji: e.target.value })} /></Field>
-              <Field label="Colour"><Input type="color" value={editing.color ?? '#22c55e'} onChange={(e) => setEditing({ ...editing, color: e.target.value })} className="h-12 p-1" /></Field>
-              <Field label="Order"><Input inputMode="numeric" value={editing.sortOrder ?? 0} onChange={(e) => setEditing({ ...editing, sortOrder: Number(e.target.value) || 0 })} /></Field>
+              <Field label={t('al.col_emoji')}><Input value={editing.emoji ?? ''} onChange={(e) => setEditing({ ...editing, emoji: e.target.value })} /></Field>
+              <Field label={t('ap.colour')}><Input type="color" value={editing.color ?? '#22c55e'} onChange={(e) => setEditing({ ...editing, color: e.target.value })} className="h-12 p-1" /></Field>
+              <Field label={t('ap.order')}><Input inputMode="numeric" value={editing.sortOrder ?? 0} onChange={(e) => setEditing({ ...editing, sortOrder: Number(e.target.value) || 0 })} /></Field>
             </div>
-            <Toggle checked={editing.active ?? true} onChange={(v) => setEditing({ ...editing, active: v })} label="Visible in shop" />
-            <Button block loading={save.isPending} disabled={!editing.name} onClick={() => save.mutate(editing)}>Save category</Button>
+            <Toggle checked={editing.active ?? true} onChange={(v) => setEditing({ ...editing, active: v })} label={t('ap.visible_toggle')} />
+            <Button block loading={save.isPending} disabled={!editing.name} onClick={() => save.mutate(editing)}>{t('ap.save_category')}</Button>
           </div>
         )}
       </Sheet>

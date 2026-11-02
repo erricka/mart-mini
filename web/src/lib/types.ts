@@ -1,7 +1,7 @@
 export type Role = 'customer' | 'staff' | 'admin';
-export type OrderStatus = 'awaiting_payment' | 'placed' | 'confirmed' | 'preparing' | 'out_for_delivery' | 'delivered' | 'ready_for_pickup' | 'collected' | 'cancelled';
+export type OrderStatus = 'placed' | 'confirmed' | 'preparing' | 'out_for_delivery' | 'delivered' | 'ready_for_pickup' | 'collected' | 'cancelled';
 export type PaymentStatus = 'unpaid' | 'paid' | 'refunded' | 'failed';
-export type PaymentMethod = 'cash' | 'qr';
+export type PaymentMethod = 'cash';
 export type Fulfillment = 'delivery' | 'pickup';
 export type DiscountType = 'percent' | 'fixed' | 'free_delivery' | 'free_product';
 
@@ -16,6 +16,7 @@ export interface User {
   phoneVerified: boolean;
   role: Role;
   pointsBalance: number;
+  languageCode: string | null;
   createdAt: string;
 }
 
@@ -31,7 +32,6 @@ export interface Shop {
   pickupAddress: string;
   pickupHours: string;
   supportPhone: string;
-  payments: { cashEnabled: boolean; qrEnabled: boolean; qrMode: 'off' | 'simulated' | 'aba_payway'; paymentWindowMinutes: number };
   devLoginEnabled: boolean;
   telegramConfigured: boolean;
   notificationsSimulated: boolean;
@@ -255,25 +255,4 @@ export interface StaffOrderDetail extends OrderDetail {
     orderCount: number;
   };
   notifications: { id: number; kind: string; status: 'pending' | 'sent' | 'failed' | 'simulated'; createdAt: string; lastError: string | null }[];
-  payment: { provider: string; reference: string | null; expiresAt: string | null; paidAt: string | null; providerRef: string | null } | null;
-}
-
-export interface PaymentSession {
-  orderId: number;
-  code: string;
-  status: OrderStatus;
-  paymentStatus: PaymentStatus;
-  paymentMethod: PaymentMethod;
-  amountCents: number;
-  amountLabel: string;
-  provider: string;
-  providerLabel: string;
-  simulated: boolean;
-  reference: string | null;
-  expiresAt: string | null;
-  qrImageUrl: string | null;
-  appLink: string | null;
-  instructions: string;
-  cashEnabled: boolean;
-  providerError: string | null;
 }

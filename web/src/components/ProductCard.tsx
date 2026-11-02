@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom';
 import { useCart } from '../lib/cart';
 import { money } from '../lib/format';
+import { useT } from '../lib/i18n';
 import { haptic } from '../lib/telegram';
 import type { Product } from '../lib/types';
 import { ProductImage } from './ProductImage';
@@ -8,12 +9,14 @@ import { QtyStepper } from './QtyStepper';
 import { Badge } from './ui';
 
 export function StockHint({ p }: { p: Product }) {
-  if (!p.inStock) return <span className="text-xs font-semibold text-rose-600">Out of stock</span>;
-  if (p.stock <= 5) return <span className="text-xs font-semibold text-orange-600">Only {p.stock} left</span>;
-  return <span className="text-xs text-muted">In stock</span>;
+  const { t } = useT();
+  if (!p.inStock) return <span className="text-xs font-semibold text-rose-600">{t('product.out_of_stock')}</span>;
+  if (p.stock <= 5) return <span className="text-xs font-semibold text-orange-600">{t('product.only_left', { n: p.stock })}</span>;
+  return <span className="text-xs text-muted">{t('product.in_stock')}</span>;
 }
 
 export function ProductCard({ p, color }: { p: Product; color?: string }) {
+  const { t } = useT();
   const line = useCart((s) => s.lines.find((l) => l.productId === p.id));
   const add = useCart((s) => s.add);
   const setQty = useCart((s) => s.setQty);
@@ -41,7 +44,7 @@ export function ProductCard({ p, color }: { p: Product; color?: string }) {
               haptic('medium');
               add(p);
             }}
-            aria-label={`Add ${p.name} to cart`}
+            aria-label={t('product.add_aria', { name: p.name })}
             className="grid h-10 w-10 place-items-center rounded-full bg-brand text-2xl font-bold text-brand-ink shadow-md transition active:scale-90 disabled:bg-line disabled:text-muted disabled:shadow-none"
           >
             +

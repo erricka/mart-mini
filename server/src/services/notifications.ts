@@ -9,6 +9,7 @@ import type { FastifyBaseLogger } from 'fastify';
 import { config } from '../config.js';
 import { db, type Executor } from '../db/client.js';
 import { notifications, users } from '../db/schema.js';
+import { userLang, type Lang } from '../lib/i18n.js';
 import { TelegramApiError, tgCall, webAppKeyboard } from '../lib/telegram-api.js';
 
 export interface NewNotification {
@@ -33,12 +34,27 @@ export async function queueNotification(ex: Executor, n: NewNotification) {
   });
 }
 
-export async function notifyStaff(ex: Executor, n: Omit<NewNotification, 'chatId' | 'userId'>) {
+/** Queues one message per staff member, written in that person's language. */
+export async function notifyStaff(
+  ex: Executor,
+  n: { kind: string; orderId?: number | null; buttonPath?: string; text: (lang: Lang) => string; buttonText?: (lang: Lang) => string },
+) {
   const staff = await ex
-    .select({ id: users.id, telegramId: users.telegramId })
+    .select({ id: users.id, telegramId: users.telegramId, languageCode: users.languageCode })
     .from(users)
     .where(inArray(users.role, ['staff', 'admin']));
-  for (const s of staff) await queueNotification(ex, { ...n, userId: s.id, chatId: s.telegramId });
+  for (const s of staff) {
+    const lang = userLang(s);
+    await queueNotification(ex, {
+      kind: n.kind,
+      orderId: n.orderId,
+      buttonPath: n.buttonPath,
+      text: n.text(lang),
+      buttonText: n.buttonText?.(lang),
+      userId: s.id,
+      chatId: s.telegramId,
+    });
+  }
 }
 
 let running = false;

@@ -21,6 +21,7 @@ export const useIsAdmin = () => useSession().user?.role === 'admin';
 export interface Settings {
   shopName: string;
   tagline: string;
+  taglineEn: string | null;
   currency: string;
   deliveryEnabled: boolean;
   pickupEnabled: boolean;
@@ -34,17 +35,15 @@ export interface Settings {
   signupBonusPoints: number;
   welcomeCouponId: number | null;
   rewardExpiryDays: number | null;
-  cashEnabled: boolean;
-  qrPaymentMode: 'off' | 'simulated' | 'aba_payway';
-  qrPaymentInstructions: string;
-  paymentWindowMinutes: number;
 }
 
 export interface AdminCoupon {
   id: number;
   code: string | null;
   title: string;
+  titleEn: string | null;
   description: string;
+  descriptionEn: string | null;
   discountType: 'percent' | 'fixed' | 'free_delivery' | 'free_product';
   value: number;
   freeProductId: number | null;
@@ -64,7 +63,9 @@ export interface AdminCoupon {
 export interface AdminReward {
   id: number;
   title: string;
+  titleEn: string | null;
   description: string;
+  descriptionEn: string | null;
   emoji: string;
   pointsRequired: number;
   isSurprise: boolean;
@@ -73,9 +74,8 @@ export interface AdminReward {
 }
 
 export interface LoyaltyData {
-  settings: Settings & { id: number; updatedAt: string };
-  paymentProviders: { id: string; label: string; configured: boolean }[];
-  levels: Level[];
+  settings: Settings & { id: number; updatedAt: string } & Record<string, unknown>;
+  levels: (Level & { nameEn: string | null })[];
   rewards: AdminReward[];
   coupons: AdminCoupon[];
   stats: { unlocked: number; used: number };
@@ -83,9 +83,15 @@ export interface LoyaltyData {
 
 export const useLoyalty = () => useQuery({ queryKey: ['admin', 'loyalty'], queryFn: () => api<LoyaltyData>('/admin/loyalty') });
 
+const SETTINGS_KEYS: (keyof Settings)[] = [
+  'shopName', 'tagline', 'taglineEn', 'currency', 'deliveryEnabled', 'pickupEnabled', 'deliveryFeeCents', 'freeDeliveryMinCents',
+  'minOrderCents', 'pickupAddress', 'pickupHours', 'supportPhone', 'pointsPerDollar', 'signupBonusPoints', 'welcomeCouponId', 'rewardExpiryDays',
+];
+
+/** Only the editable fields (the API rejects unknown ones such as reserved payment columns). */
 export function settingsPayload(s: LoyaltyData['settings'], patch: Partial<Settings>): Settings {
-  const { id: _id, updatedAt: _u, ...rest } = s;
-  return { ...rest, ...patch };
+  const base = Object.fromEntries(SETTINGS_KEYS.map((k) => [k, s[k]])) as unknown as Settings;
+  return { ...base, ...patch };
 }
 
 export const Th = ({ children, className = '' }: { children?: ReactNode; className?: string }) => (

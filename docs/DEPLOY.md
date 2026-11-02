@@ -18,7 +18,7 @@ You need:
 ## 1. Create the Telegram bot
 
 1. In Telegram, open **[@BotFather](https://t.me/BotFather)** and send `/newbot`.
-2. Choose a display name (e.g. *Sunny Market*) and a username ending in `bot` (e.g. `sunnymarket_kh_bot`).
+2. Choose a display name (e.g. *mart25*) and a username ending in `bot` (e.g. `mart25_bot`).
 3. BotFather replies with a **token** like `7123456789:AAH...`. **Keep it secret.** Anyone with it controls your bot.
 4. Find **your own Telegram user ID**: open **[@userinfobot](https://t.me/userinfobot)** and press Start. Note the number after `Id:`. This becomes the shop admin.
 
@@ -27,7 +27,7 @@ Optional branding in BotFather: `/setuserpic` (logo), `/setdescription` (shown b
 ## 2. Deploy to Render
 
 1. Render Dashboard → **New → Blueprint** → connect GitHub → choose the repository.
-   Render reads `render.yaml` and proposes a **web service** (`sunny-market`) and a **PostgreSQL database**, both in Singapore.
+   Render reads `render.yaml` and proposes a **web service** (`mart25`) and a **PostgreSQL database**, both in Singapore.
 2. Fill in the values it asks for:
 
    | Key | Value |
@@ -38,22 +38,22 @@ Optional branding in BotFather: `/setuserpic` (logo), `/setdescription` (shown b
 
    Everything else is set automatically: the session secret, webhook secret, database connection, migrations, the public URL, and **starter shop data on first boot**.
 3. Click **Apply**. The first build takes a few minutes.
-4. When it's live, copy the service URL, e.g. `https://sunny-market.onrender.com`. Opening it in a normal browser shows *"Open in Telegram"*. That's expected: the app only signs people in through Telegram.
+4. When it's live, copy the service URL, e.g. `https://mart25.onrender.com`. Opening it in a normal browser shows *"Open in Telegram"*. That's expected: the app only signs people in through Telegram.
 5. Check the service **Logs**. You should see:
 
    ```
-   🌱 First boot: creating starter shop setup …
+   🌱 First boot: creating the mart25 starter setup …
    Telegram webhook registered
-   Bot menu button → https://sunny-market.onrender.com
+   Bot menu button → https://mart25.onrender.com
    🛒 API ready … notifications via Telegram, simulated QR payments off, dev login off
    ```
 
 ## 3. Connect the bot to the Mini App
 
-The server has already set the bot's **menu button** (🛒 Shop) and commands. One step in BotFather enables QR-code links:
+The server has already set the bot's **menu button** (🛒 ទិញទំនិញ) and commands, in Khmer, with English descriptions for Telegram apps set to English. One step in BotFather enables QR-code links:
 
 1. BotFather → `/mybots` → your bot → **Bot Settings → Configure Mini App → Enable Mini App**.
-2. Send your Render URL (`https://sunny-market.onrender.com`).
+2. Send your Render URL (`https://mart25.onrender.com`).
 
 You can now open **`https://t.me/<your_bot>?startapp=store`**, which is what the QR codes point to.
 
@@ -63,7 +63,7 @@ You can now open **`https://t.me/<your_bot>?startapp=store`**, which is what the
 
 **As the admin (your account):**
 
-1. Open your bot → **Start** → tap the **🛒 Shop** button next to the message box.
+1. Open your bot → **Start** → tap the **🛒 ទិញទំនិញ** button next to the message box.
 2. Because your ID is in `ADMIN_TELEGRAM_IDS`, you go straight in, with no onboarding.
 3. Send **`/dashboard`** to the bot. You get two buttons:
    - **📋 Open dashboard here:** the seller dashboard inside Telegram (works on Telegram Desktop too).
@@ -71,6 +71,7 @@ You can now open **`https://t.me/<your_bot>?startapp=store`**, which is what the
 
 **As a new customer (use a second Telegram account or a friend's phone):** scan a QR code or open `https://t.me/<your_bot>?startapp=store`. You'll see:
 
+1. **language choice (ភាសាខ្មែរ / English)**
 1. welcome screen
 2. name and phone
 3. privacy notice
@@ -79,24 +80,38 @@ You can now open **`https://t.me/<your_bot>?startapp=store`**, which is what the
 
 ## 5. Set up the shop (dashboard)
 
-1. **Settings:** shop name, tagline, currency (USD or KHR), support phone, delivery fee, free-delivery threshold, minimum order, pickup address and hours. Payments are **cash only** for now (see *Payments* below).
-2. **Catalog → Products → + New product:** name, aisle, price, optional "was" price for promotions, starting stock, and a photo (📷 Upload). The 9 aisles already exist. Rename, hide or add more under *Categories*.
-3. **Loyalty:** points per dollar, welcome bonus, welcome coupon, levels and milestone rewards (pre-filled: Free delivery at 100 points, $3 off at 250, $5 off at 500, $10 off at 1000). You can add free-product gifts once products exist.
+1. **ការកំណត់ (Settings):**
+   - support phone, pickup address and hours
+   - delivery fee, free-delivery threshold, minimum order
+   - currency (USD or KHR)
+   - tagline in Khmer, with optional English
+
+   The shop name is already **mart25**. Payments are **cash only** (see *Payments* below).
+2. **ទំនិញ (Catalog) → + ទំនិញថ្មី:** add each product with:
+   - **Khmer name** and optional **English name**
+   - aisle, price, and an optional "was" price for promotions
+   - starting stock
+   - photo (📷 upload)
+
+   The 9 aisles already exist, in Khmer and English.
+3. **កម្មវិធីសមាជិក (Loyalty):**
+   - points per dollar, welcome bonus, welcome coupon
+   - levels and milestone rewards. These are pre-filled in Khmer and English: free delivery at 100 points, $3 off at 250, $5 off at 500, $10 off at 1000. You can add free-product gifts once products exist.
 4. **Staff:** each staff member opens the shop once in Telegram. Then go to **Customers → their name → Account role → Staff**, and they can use `/dashboard`.
-5. **QR codes:** download the PNGs or print the posters. Use **In-store poster** at the entrance and checkouts and **Printed receipts** in the receipt footer. Insights shows which code brings sign-ups.
+5. **កូដ QR (QR codes):** download the PNGs or print the posters. Posters are always **bilingual** (Khmer and English). Use the store poster at the entrance and checkouts and the receipt code in the receipt footer. Insights shows which code brings sign-ups.
 
 **Before printing, test end to end:** place an order with the second account, accept it in the dashboard, mark it *Delivered*/*Collected*, and check that the customer receives Telegram messages and points.
 
 ## Payments
 
-- **Cash on delivery / at pickup** works now.
-- **QR (ABA):** simulated payments are automatically **disabled in production**, so the QR option stays hidden until ABA is connected. When you have your ABA PayWay credentials, implement `server/src/services/providers/aba-payway.ts` (instructions are in the file). Then add these to Render:
-  - `ABA_PAYWAY_MERCHANT_ID`
-  - `ABA_PAYWAY_API_KEY`
-  - `ABA_PAYWAY_BASE_URL`
+**Cash only for now:** cash on delivery, or pay at the counter for pickup. Orders reach the shop immediately. Staff tap **💵 បានទទួលប្រាក់ (Mark paid)** when they collect the money. Online / QR payment (e.g. ABA) can be added later. The earlier QR flow is kept in the git history (commit `4c24b89`).
 
-  Push the change and choose **Settings → Payments → QR payment → ABA PayWay**.
-- For a private demo only, `ALLOW_SIMULATED_PAYMENTS=true` turns the clearly-labelled fake QR back on. **Never leave it on for real customers.**
+## Languages
+
+- Customers choose **ភាសាខ្មែរ** or **English** on their first visit and can switch in **គណនី (Profile)**.
+- Bot messages follow each person's choice.
+- Staff switch language in the dashboard sidebar or in Settings.
+- `DEFAULT_LANGUAGE=km` is the language before anyone has chosen.
 
 ## Day-to-day
 

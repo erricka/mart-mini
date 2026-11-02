@@ -45,7 +45,6 @@ export interface HomeData {
   unseen: WalletItem[];
   availableRewards: number;
   activeOrders: number;
-  awaitingPaymentOrderId: number | null;
 }
 export const useHome = () => useQuery({ queryKey: ['home'], queryFn: () => api<HomeData>('/home') });
 export const useRewards = () => useQuery({ queryKey: ['rewards'], queryFn: () => api<RewardsOverview>('/rewards') });

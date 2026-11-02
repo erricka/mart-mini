@@ -1,3 +1,5 @@
+import { tr } from './i18n.js';
+
 export class AppError extends Error {
   constructor(
     public statusCode: number,
@@ -10,9 +12,9 @@ export class AppError extends Error {
 }
 
 export const badRequest = (code: string, message: string, details?: unknown) => new AppError(400, code, message, details);
-export const unauthorized = (message = 'Please sign in again.') => new AppError(401, 'unauthorized', message);
-export const forbidden = (message = 'You do not have access to this.') => new AppError(403, 'forbidden', message);
-export const notFound = (message = 'Not found.') => new AppError(404, 'not_found', message);
+export const unauthorized = (message = tr('err.sign_in')) => new AppError(401, 'unauthorized', message);
+export const forbidden = (message = tr('err.forbidden')) => new AppError(403, 'forbidden', message);
+export const notFound = (message = tr('err.not_found')) => new AppError(404, 'not_found', message);
 export const conflict = (code: string, message: string, details?: unknown) => new AppError(409, code, message, details);
 
 /** Postgres unique_violation (23505), unwrapping Drizzle's error wrapper. */

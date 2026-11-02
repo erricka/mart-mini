@@ -17,8 +17,9 @@ import {
 } from '../db/schema.js';
 import { notFound } from '../lib/errors.js';
 import { formatMoney } from '../lib/format.js';
+import { pick, tr, userLang, type Lang } from '../lib/i18n.js';
 import { esc, queueNotification } from './notifications.js';
-import { getLevels, getSettings, levelFor } from './settings.js';
+import { getLevels, getSettings, levelFor, localLevel } from './settings.js';
 
 type PointsType = (typeof pointsTransactions.$inferInsert)['type'];
 
@@ -76,7 +77,7 @@ export function rewardExpiry(settings: ShopSettings, from = new Date()) {
  */
 export async function syncMilestones(
   tx: Tx,
-  user: Pick<User, 'id' | 'telegramId'>,
+  user: Pick<User, 'id' | 'telegramId'> & { languageCode?: string | null },
   balance: number,
   opts: { notify?: boolean; settings?: ShopSettings } = {},
 ) {
@@ -88,7 +89,7 @@ export async function syncMilestones(
     .where(and(eq(customerRewards.userId, user.id), eq(customerRewards.source, 'milestone')));
   const ownedByReward = new Map(owned.map((o) => [o.rewardId, o]));
   const now = new Date();
-  const unlocked: { title: string; emoji: string }[] = [];
+  const unlocked: { title: string; titleEn: string | null; emoji: string }[] = [];
 
   for (const r of allRewards) {
     const existing = ownedByReward.get(r.id);
@@ -99,13 +100,13 @@ export async function syncMilestones(
           .values({ userId: user.id, rewardId: r.id, couponId: r.couponId, source: 'milestone', expiresAt: rewardExpiry(settings) })
           .onConflictDoNothing()
           .returning({ id: customerRewards.id });
-        if (ins.length) unlocked.push({ title: r.title, emoji: r.emoji });
+        if (ins.length) unlocked.push({ title: r.title, titleEn: r.titleEn, emoji: r.emoji });
       } else if (existing.status === 'revoked') {
         await tx
           .update(customerRewards)
           .set({ status: 'available', revokedAt: null, unlockedAt: now, seenAt: null, expiresAt: rewardExpiry(settings) })
           .where(and(eq(customerRewards.id, existing.id), eq(customerRewards.status, 'revoked')));
-        unlocked.push({ title: r.title, emoji: r.emoji });
+        unlocked.push({ title: r.title, titleEn: r.titleEn, emoji: r.emoji });
       }
     } else if (existing && existing.status === 'available' && r.pointsRequired > balance) {
       await tx
@@ -116,13 +117,14 @@ export async function syncMilestones(
   }
 
   if (opts.notify) {
+    const lang = userLang(user);
     for (const u of unlocked) {
       await queueNotification(tx, {
         userId: user.id,
         chatId: user.telegramId,
         kind: 'reward_unlocked',
-        text: `🎉 <b>Reward unlocked!</b>\n${u.emoji} ${esc(u.title)} is waiting for you in Rewards.`,
-        buttonText: '🎁 Open my rewards',
+        text: tr('n.reward_unlocked', { emoji: u.emoji, title: esc(pick(u.title, u.titleEn, lang)) }, lang),
+        buttonText: tr('n.btn_rewards', {}, lang),
         buttonPath: '/rewards',
       });
     }
@@ -132,16 +134,18 @@ export async function syncMilestones(
 
 // ---------- Customer-facing overview ----------
 
-export function describeCoupon(c: Coupon, currency: string, giftName?: string | null) {
+export function describeCoupon(c: Coupon, currency: string, giftName?: string | null, lang?: Lang) {
   switch (c.discountType) {
     case 'percent':
-      return `${c.value}% off${c.maxDiscountCents ? ` (up to ${formatMoney(c.maxDiscountCents, currency)})` : ''}`;
+      return c.maxDiscountCents
+        ? tr('c.percent_cap', { n: c.value, max: formatMoney(c.maxDiscountCents, currency, lang) }, lang)
+        : tr('c.percent', { n: c.value }, lang);
     case 'fixed':
-      return `${formatMoney(c.value, currency)} off`;
+      return tr('c.fixed', { amount: formatMoney(c.value, currency, lang) }, lang);
     case 'free_delivery':
-      return 'Free delivery';
+      return tr('c.free_delivery', {}, lang);
     case 'free_product':
-      return `Free ${giftName ?? 'gift'}`;
+      return tr('c.free_product', { name: giftName ?? tr('c.gift', {}, lang) }, lang);
   }
 }
 
@@ -149,8 +153,8 @@ export function serializeCoupon(c: Coupon, currency: string, giftName?: string |
   return {
     id: c.id,
     code: c.code,
-    title: c.title,
-    description: c.description,
+    title: pick(c.title, c.titleEn),
+    description: pick(c.description, c.descriptionEn),
     discountType: c.discountType,
     value: c.value,
     benefit: describeCoupon(c, currency, giftName),
@@ -164,7 +168,7 @@ export async function availableDiscounts(userId: number, ex: Executor = db) {
   const settings = await getSettings(ex);
   const now = new Date();
   const wallet = await ex
-    .select({ cr: customerRewards, coupon: coupons, reward: rewards, giftName: products.name })
+    .select({ cr: customerRewards, coupon: coupons, reward: rewards, giftName: products.name, giftNameEn: products.nameEn })
     .from(customerRewards)
     .innerJoin(coupons, eq(coupons.id, customerRewards.couponId))
     .leftJoin(rewards, eq(rewards.id, customerRewards.rewardId))
@@ -173,7 +177,7 @@ export async function availableDiscounts(userId: number, ex: Executor = db) {
     .orderBy(desc(customerRewards.unlockedAt));
 
   const publicCoupons = await ex
-    .select({ coupon: coupons, giftName: products.name })
+    .select({ coupon: coupons, giftName: products.name, giftNameEn: products.nameEn })
     .from(coupons)
     .leftJoin(products, eq(products.id, coupons.freeProductId))
     .where(
@@ -205,13 +209,14 @@ export async function availableDiscounts(userId: number, ex: Executor = db) {
     : [];
   const usedBy = new Map(usedCounts.map((u) => [u.couponId, u.n]));
 
-  const items = wallet.map(({ cr, coupon, reward, giftName }) => {
+  const items = wallet.map(({ cr, coupon, reward, giftName: g, giftNameEn }) => {
+    const giftName = g ? pick(g, giftNameEn) : g;
     const expired = cr.status === 'available' && cr.expiresAt != null && cr.expiresAt < now;
     return {
       id: cr.id,
       source: cr.source,
       status: expired ? ('expired' as const) : cr.status,
-      title: reward?.title ?? coupon.title,
+      title: reward ? pick(reward.title, reward.titleEn) : pick(coupon.title, coupon.titleEn),
       emoji: reward?.emoji ?? (cr.source === 'welcome' ? '👋' : '🎟️'),
       unlockedAt: cr.unlockedAt,
       usedAt: cr.usedAt,
@@ -226,17 +231,17 @@ export async function availableDiscounts(userId: number, ex: Executor = db) {
     wallet: items,
     publicCoupons: publicCoupons
       .filter((p) => p.coupon.perCustomerLimit == null || (usedBy.get(p.coupon.id) ?? 0) < p.coupon.perCustomerLimit)
-      .map((p) => serializeCoupon(p.coupon, settings.currency, p.giftName)),
+      .map((p) => serializeCoupon(p.coupon, settings.currency, p.giftName ? pick(p.giftName, p.giftNameEn) : null)),
   };
 }
 
 const BADGES = [
-  { id: 'member', emoji: '🌱', title: 'New Member', hint: 'Join the loyalty club' },
-  { id: 'first_basket', emoji: '🧺', title: 'First Basket', hint: 'Complete your first order' },
-  { id: 'regular', emoji: '🔁', title: 'Regular', hint: 'Complete 5 orders' },
-  { id: 'big_basket', emoji: '🛒', title: 'Big Basket', hint: 'Complete an order over $50' },
-  { id: 'fresh_fan', emoji: '🥬', title: 'Fresh Fan', hint: 'Buy fresh produce in 3 orders' },
-  { id: 'explorer', emoji: '🧭', title: 'Explorer', hint: 'Buy from 5 different aisles' },
+  { id: 'member', emoji: '🌱' },
+  { id: 'first_basket', emoji: '🧺' },
+  { id: 'regular', emoji: '🔁' },
+  { id: 'big_basket', emoji: '🛒' },
+  { id: 'fresh_fan', emoji: '🥬' },
+  { id: 'explorer', emoji: '🧭' },
 ] as const;
 
 async function computeBadges(userId: number, ex: Executor) {
@@ -267,7 +272,16 @@ async function computeBadges(userId: number, ex: Executor) {
     fresh_fan: (aisles?.freshOrders ?? 0) >= 3,
     explorer: (aisles?.categoriesBought ?? 0) >= 5,
   };
-  return { badges: BADGES.map((b) => ({ ...b, earned: earned[b.id] })), completedOrders: stats.completedOrders };
+  const currency = (await getSettings(ex)).currency;
+  return {
+    badges: BADGES.map((b) => ({
+      ...b,
+      title: tr(`badge.${b.id}`),
+      hint: tr(`badge.${b.id}_hint`, { amount: formatMoney(5000, currency) }),
+      earned: earned[b.id],
+    })),
+    completedOrders: stats.completedOrders,
+  };
 }
 
 export async function loyaltyOverview(user: User) {
@@ -286,7 +300,7 @@ export async function loyaltyOverview(user: User) {
   const { current, next } = levelFor(allLevels, balance);
 
   const milestoneRows = await db
-    .select({ reward: rewards, coupon: coupons, giftName: products.name })
+    .select({ reward: rewards, coupon: coupons, giftName: products.name, giftNameEn: products.nameEn })
     .from(rewards)
     .innerJoin(coupons, eq(coupons.id, rewards.couponId))
     .leftJoin(products, eq(products.id, coupons.freeProductId))
@@ -304,18 +318,19 @@ export async function loyaltyOverview(user: User) {
     if (w.rewardId && item) walletByReward.set(w.rewardId, item);
   }
 
-  const milestones = milestoneRows.map(({ reward, coupon, giftName }) => {
+  const milestones = milestoneRows.map(({ reward, coupon, giftName: g, giftNameEn }) => {
+    const giftName = g ? pick(g, giftNameEn) : g;
     const reached = reward.pointsRequired <= balance;
     const hidden = reward.isSurprise && !reached;
     return {
       id: reward.id,
-      title: reward.title,
-      description: hidden ? 'Reach this milestone to reveal your surprise!' : reward.description,
+      title: pick(reward.title, reward.titleEn),
+      description: hidden ? tr('rw.mystery_text') : pick(reward.description, reward.descriptionEn),
       emoji: hidden ? '🎁' : reward.emoji,
       pointsRequired: reward.pointsRequired,
       isSurprise: reward.isSurprise,
       reached,
-      benefit: hidden ? 'Mystery reward' : describeCoupon(coupon, settings.currency, giftName),
+      benefit: hidden ? tr('rw.mystery') : describeCoupon(coupon, settings.currency, giftName),
       walletStatus: walletByReward.get(reward.id)?.status ?? null,
     };
   });
@@ -350,7 +365,7 @@ export async function loyaltyOverview(user: User) {
     pointsPerDollar: settings.pointsPerDollar,
     level: current,
     nextLevel: next ? { ...next, remaining: next.minPoints - balance } : null,
-    levels: allLevels,
+    levels: allLevels.map(localLevel),
     milestones,
     progress,
     wallet: discounts.wallet,
@@ -382,7 +397,7 @@ export async function markRewardsSeen(userId: number, ids: number[]) {
 export async function loyaltyTeaser(ex: Executor = db) {
   const settings = await getSettings(ex);
   const [first] = await ex
-    .select({ reward: rewards, coupon: coupons, giftName: products.name })
+    .select({ reward: rewards, coupon: coupons, giftName: products.name, giftNameEn: products.nameEn })
     .from(rewards)
     .innerJoin(coupons, eq(coupons.id, rewards.couponId))
     .leftJoin(products, eq(products.id, coupons.freeProductId))
@@ -392,11 +407,11 @@ export async function loyaltyTeaser(ex: Executor = db) {
   let welcomeCoupon: ReturnType<typeof serializeCoupon> | null = null;
   if (settings.welcomeCouponId) {
     const [w] = await ex
-      .select({ coupon: coupons, giftName: products.name })
+      .select({ coupon: coupons, giftName: products.name, giftNameEn: products.nameEn })
       .from(coupons)
       .leftJoin(products, eq(products.id, coupons.freeProductId))
       .where(and(eq(coupons.id, settings.welcomeCouponId), eq(coupons.active, true)));
-    if (w) welcomeCoupon = serializeCoupon(w.coupon, settings.currency, w.giftName);
+    if (w) welcomeCoupon = serializeCoupon(w.coupon, settings.currency, w.giftName ? pick(w.giftName, w.giftNameEn) : null);
   }
   return {
     signupBonusPoints: settings.signupBonusPoints,
@@ -404,10 +419,10 @@ export async function loyaltyTeaser(ex: Executor = db) {
     welcomeCoupon,
     firstMilestone: first
       ? {
-          title: first.reward.title,
+          title: pick(first.reward.title, first.reward.titleEn),
           emoji: first.reward.isSurprise ? '🎁' : first.reward.emoji,
           pointsRequired: first.reward.pointsRequired,
-          benefit: first.reward.isSurprise ? 'Mystery reward' : describeCoupon(first.coupon, settings.currency, first.giftName),
+          benefit: first.reward.isSurprise ? tr('rw.mystery') : describeCoupon(first.coupon, settings.currency, first.giftName ? pick(first.giftName, first.giftNameEn) : null),
         }
       : null,
   };

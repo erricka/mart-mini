@@ -6,6 +6,7 @@ import { config } from '../../config.js';
 import { db } from '../../db/client.js';
 import { addresses, orders, pointsTransactions, users } from '../../db/schema.js';
 import { badRequest, notFound } from '../../lib/errors.js';
+import { tr, userLang } from '../../lib/i18n.js';
 import { idParam, parse } from '../../lib/validate.js';
 import { makeGuards } from '../../plugins/auth.js';
 import { publicUser } from '../../services/identity.js';
@@ -72,7 +73,7 @@ export async function adminCustomerRoutes(app: FastifyInstance) {
   app.get('/customers/:id', { preHandler: guard.staff }, async (req) => {
     const { id } = parse(idParam, req.params);
     const [u] = await db.select().from(users).where(eq(users.id, id));
-    if (!u) throw notFound('Customer not found.');
+    if (!u) throw notFound(tr('err.customer_not_found'));
     const [addr, recentOrders, history, discounts, lv, [totals]] = await Promise.all([
       db.select().from(addresses).where(eq(addresses.userId, id)),
       db.select().from(orders).where(eq(orders.userId, id)).orderBy(desc(orders.placedAt)).limit(25),
@@ -105,16 +106,16 @@ export async function adminCustomerRoutes(app: FastifyInstance) {
     const { id } = parse(idParam, req.params);
     const body = parse(
       z.object({
-        delta: z.number().int().min(-100_000).max(100_000).refine((n) => n !== 0, 'Enter a non-zero amount.'),
-        note: z.string().trim().min(3, 'Please add a reason (shown in the history).').max(200),
+        delta: z.number().int().min(-100_000).max(100_000).refine((n) => n !== 0, 'err.nonzero'),
+        note: z.string().trim().min(3, 'err.reason_required').max(200),
         idempotencyKey: z.string().min(8).max(100),
       }),
       req.body,
     );
     const result = await db.transaction(async (tx) => {
       const [u] = await tx.select().from(users).where(eq(users.id, id)).for('update');
-      if (!u) throw notFound('Customer not found.');
-      if (u.pointsBalance + body.delta < 0) throw badRequest('negative_balance', `This would leave ${u.firstName} with a negative balance.`);
+      if (!u) throw notFound(tr('err.customer_not_found'));
+      if (u.pointsBalance + body.delta < 0) throw badRequest('negative_balance', tr('err.negative_balance', { name: u.firstName }));
       const r = await applyPoints(tx, {
         userId: id,
         delta: body.delta,
@@ -130,8 +131,8 @@ export async function adminCustomerRoutes(app: FastifyInstance) {
             userId: u.id,
             chatId: u.telegramId,
             kind: 'points_bonus',
-            text: `⭐ You received <b>${body.delta} bonus points</b> from the shop!\n${esc(body.note)}`,
-            buttonText: 'See my rewards',
+            text: tr('n.bonus', { n: body.delta, note: esc(body.note) }, userLang(u)),
+            buttonText: tr('n.btn_see_rewards', {}, userLang(u)),
             buttonPath: '/rewards',
           });
         }
@@ -145,11 +146,11 @@ export async function adminCustomerRoutes(app: FastifyInstance) {
   app.put('/customers/:id/role', { preHandler: guard.admin }, async (req) => {
     const { id } = parse(idParam, req.params);
     const body = parse(z.object({ role: z.enum(['customer', 'staff', 'admin']) }), req.body);
-    if (id === req.account!.id) throw badRequest('self_role', "You can't change your own role.");
+    if (id === req.account!.id) throw badRequest('self_role', tr('err.self_role'));
     const [target] = await db.select().from(users).where(eq(users.id, id));
-    if (!target) throw notFound('Customer not found.');
+    if (!target) throw notFound(tr('err.customer_not_found'));
     if (config.ADMIN_TELEGRAM_IDS.includes(target.telegramId) && body.role !== 'admin') {
-      throw badRequest('env_admin', 'This person is an admin via ADMIN_TELEGRAM_IDS. Remove them there first.');
+      throw badRequest('env_admin', tr('err.env_admin'));
     }
     const [u] = await db.update(users).set({ role: body.role, updatedAt: new Date() }).where(eq(users.id, id)).returning();
     return { customer: publicUser(u) };
@@ -157,7 +158,7 @@ export async function adminCustomerRoutes(app: FastifyInstance) {
 
   // ---------- QR codes for the store & receipts ----------
   const sourceSchema = z.object({
-    source: z.string().regex(/^[A-Za-z0-9_-]{1,64}$/, 'Use letters, numbers, - or _').default('store'),
+    source: z.string().regex(/^[A-Za-z0-9_-]{1,64}$/, 'err.source_format').default('store'),
     format: z.enum(['svg', 'png']).default('svg'),
   });
 

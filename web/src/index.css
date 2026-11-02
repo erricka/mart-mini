@@ -36,7 +36,7 @@
   --color-brand: var(--brand);
   --color-brand-ink: var(--brand-ink);
   --color-sun: var(--sun);
-  --font-sans: ui-rounded, "SF Pro Rounded", system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-sans: "Kantumruy Pro Variable", "Kantumruy Pro", "Noto Sans Khmer", ui-rounded, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
 }
 
 html, body, #root { min-height: 100%; }
@@ -49,6 +49,10 @@ body {
   overscroll-behavior-y: none;
 }
 input, textarea, select, button { font: inherit; }
+/* Khmer script stacks consonant clusters vertically — give lines more room so nothing clips. */
+html[lang="km"] body { line-height: 1.65; }
+html[lang="km"] .leading-tight, html[lang="km"] .leading-none { line-height: 1.45; }
+html[lang="km"] .uppercase { text-transform: none; letter-spacing: 0; }
 button { cursor: pointer; }
 button:disabled { cursor: not-allowed; }
 :focus-visible { outline: 3px solid color-mix(in srgb, var(--brand) 55%, transparent); outline-offset: 2px; border-radius: 12px; }

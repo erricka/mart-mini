@@ -5,6 +5,7 @@
  */
 import type { FulfillmentType } from '../db/schema.js';
 import { formatMoney } from '../lib/format.js';
+import { tr } from '../lib/i18n.js';
 
 export interface PricingProduct {
   id: number;
@@ -97,12 +98,12 @@ export function couponBlocker(
   fromWallet = false,
 ): string | null {
   if (!fromWallet) {
-    if (!coupon.active) return 'This coupon is no longer active.';
-    if (coupon.startsAt && coupon.startsAt > now) return 'This coupon is not active yet.';
-    if (coupon.endsAt && coupon.endsAt < now) return 'This coupon has expired.';
+    if (!coupon.active) return tr('price.coupon_inactive');
+    if (coupon.startsAt && coupon.startsAt > now) return tr('price.coupon_not_started');
+    if (coupon.endsAt && coupon.endsAt < now) return tr('price.coupon_expired');
   }
   if (subtotalCents < coupon.minSubtotalCents) {
-    return `Add ${formatMoney(coupon.minSubtotalCents - subtotalCents, currency)} more to use this coupon.`;
+    return tr('price.coupon_min', { amount: formatMoney(coupon.minSubtotalCents - subtotalCents, currency) });
   }
   return null;
 }
@@ -128,8 +129,8 @@ export function calculateQuote(input: QuoteInput): Quote {
     if (issue) {
       issues.push(
         issue === 'insufficient_stock'
-          ? `Only ${product.stock} × ${product.name} left in stock.`
-          : `${product.name} is ${issue === 'unavailable' ? 'no longer available' : 'out of stock'}.`,
+          ? tr('price.only_left', { n: product.stock, name: product.name })
+          : tr(issue === 'unavailable' ? 'price.unavailable' : 'price.out_of_stock', { name: product.name }),
       );
     }
     const lineTotalCents = product.priceCents * quantity;
@@ -149,14 +150,14 @@ export function calculateQuote(input: QuoteInput): Quote {
     });
   }
 
-  if (lines.length === 0) issues.push('Your cart is empty.');
+  if (lines.length === 0) issues.push(tr('err.empty_cart'));
 
-  if (fulfillment === 'delivery' && !settings.deliveryEnabled) issues.push('Delivery is currently unavailable.');
-  if (fulfillment === 'pickup' && !settings.pickupEnabled) issues.push('Pickup is currently unavailable.');
+  if (fulfillment === 'delivery' && !settings.deliveryEnabled) issues.push(tr('price.no_delivery'));
+  if (fulfillment === 'pickup' && !settings.pickupEnabled) issues.push(tr('price.no_pickup'));
 
   const minOrderRemainingCents = Math.max(0, settings.minOrderCents - subtotalCents);
   if (lines.length > 0 && minOrderRemainingCents > 0) {
-    issues.push(`Minimum order is ${formatMoney(settings.minOrderCents, settings.currency)}.`);
+    issues.push(tr('price.min_order', { amount: formatMoney(settings.minOrderCents, settings.currency) }));
   }
 
   // Delivery fee (before coupons). Free-delivery threshold uses the pre-discount subtotal.
@@ -193,15 +194,15 @@ export function calculateQuote(input: QuoteInput): Quote {
           itemDiscountCents = Math.min(coupon.value, subtotalCents);
           break;
         case 'free_delivery':
-          if (fulfillment !== 'delivery') couponError = 'Free delivery only applies to delivery orders.';
-          else if (baseDeliveryFeeCents === 0) couponError = 'Your order already has free delivery — save this one!';
+          if (fulfillment !== 'delivery') couponError = tr('price.fd_pickup');
+          else if (baseDeliveryFeeCents === 0) couponError = tr('price.fd_already');
           else deliveryDiscountCents = baseDeliveryFeeCents;
           break;
         case 'free_product': {
           const gift = input.giftProduct;
           const inCart = gift ? (merged.get(gift.id)?.quantity ?? 0) : 0;
-          if (!gift || !gift.active) couponError = 'This gift is not available right now.';
-          else if (gift.stock - inCart < 1) couponError = `Sorry, the gift (${gift.name}) is out of stock.`;
+          if (!gift || !gift.active) couponError = tr('price.gift_unavailable');
+          else if (gift.stock - inCart < 1) couponError = tr('price.gift_oos', { name: gift.name });
           else {
             lines.push({
               productId: gift.id,

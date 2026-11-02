@@ -3,11 +3,13 @@ import { ProductCard, ProductGridSkeleton } from '../../components/ProductCard';
 import { RewardCelebration } from '../../components/RewardCelebration';
 import { Avatar, Badge, CountUp, ErrorState, ProgressBar, SectionTitle, Skeleton } from '../../components/ui';
 import { greeting, money } from '../../lib/format';
+import { useT } from '../../lib/i18n';
 import { useCategories, useHome, useProducts, useShop } from '../../lib/queries';
 import { useSession } from '../../lib/session';
 
 export function Home() {
   const { user } = useSession();
+  const { t } = useT();
   const navigate = useNavigate();
   const home = useHome();
   const shop = useShop();
@@ -43,37 +45,28 @@ export function Home() {
             <Badge className="bg-white/40">
               {home.data.level.emoji} {home.data.level.name}
             </Badge>
-            {home.data.availableRewards > 0 && <Badge className="bg-white/60">🎁 {home.data.availableRewards} ready to use</Badge>}
+            {home.data.availableRewards > 0 && <Badge className="bg-white/60">{t('home.ready', { n: home.data.availableRewards })}</Badge>}
           </div>
           <div className="mt-2 text-4xl font-black tabular-nums">
-            <CountUp value={home.data.balance} /> <span className="text-lg font-bold">points</span>
+            <CountUp value={home.data.balance} /> <span className="text-lg font-bold">{t('common.points')}</span>
           </div>
           {home.data.progress ? (
             <>
               <ProgressBar percent={home.data.progress.percent} className="mt-3 bg-white/40" tone="brand" />
               <p className="mt-2 text-sm font-semibold">
-                You're {home.data.progress.remaining} points away from {home.data.progress.emoji} {home.data.progress.title}!
+                {t('home.points_away', { n: home.data.progress.remaining, reward: `${home.data.progress.emoji} ${home.data.progress.title}` })}
               </p>
             </>
           ) : (
-            <p className="mt-2 text-sm font-semibold">You've unlocked every milestone — legend! 🏆</p>
+            <p className="mt-2 text-sm font-semibold">{t('home.all_unlocked')}</p>
           )}
         </Link>
       ) : null}
 
-      {home.data?.awaitingPaymentOrderId && (
-        <Link
-          to={`/orders/${home.data.awaitingPaymentOrderId}/pay`}
-          className="mt-3 flex items-center justify-between rounded-2xl bg-orange-100 px-4 py-3 font-semibold text-orange-900 dark:bg-orange-500/15 dark:text-orange-200"
-        >
-          <span>📱 Finish paying to send your order to the shop</span>
-          <span>→</span>
-        </Link>
-      )}
-      {!home.data?.awaitingPaymentOrderId && (home.data?.activeOrders ?? 0) > 0 && (
+      {(home.data?.activeOrders ?? 0) > 0 && (
         <Link to="/orders" className="mt-3 flex items-center justify-between rounded-2xl bg-sky-100 px-4 py-3 font-semibold text-sky-900 dark:bg-sky-500/15 dark:text-sky-200">
-          <span>📦 {home.data!.activeOrders} order{home.data!.activeOrders > 1 ? 's' : ''} in progress</span>
-          <span>Track →</span>
+          <span>{t('home.in_progress', { n: home.data!.activeOrders })}</span>
+          <span>{t('home.track')}</span>
         </Link>
       )}
 
@@ -82,15 +75,15 @@ export function Home() {
         onClick={() => navigate('/shop?focus=1')}
         className="mt-4 flex w-full items-center gap-3 rounded-2xl bg-surface px-4 py-3.5 text-left text-muted ring-1 ring-line/60"
       >
-        <span>🔍</span> Search apples, milk, coffee…
+        <span>🔍</span> {t('home.search')}
       </button>
 
       {shop.data?.freeDeliveryMinCents != null && shop.data.deliveryEnabled && (
-        <p className="mt-3 text-center text-sm text-muted">🚚 Free delivery on orders over {money(shop.data.freeDeliveryMinCents)}</p>
+        <p className="mt-3 text-center text-sm text-muted">{t('home.free_delivery', { amount: money(shop.data.freeDeliveryMinCents) })}</p>
       )}
 
       {/* Categories */}
-      <SectionTitle action={<Link to="/shop" className="text-sm font-semibold text-brand">See all</Link>}>Shop by aisle</SectionTitle>
+      <SectionTitle action={<Link to="/shop" className="text-sm font-semibold text-brand">{t('common.see_all')}</Link>}>{t('home.aisles')}</SectionTitle>
       <div className="grid grid-cols-4 gap-2.5">
         {cats.isLoading
           ? Array.from({ length: 8 }).map((_, i) => <Skeleton key={i} className="aspect-square" />)
@@ -105,7 +98,7 @@ export function Home() {
       {/* Promotions */}
       {(promos.isLoading || (promos.data?.length ?? 0) > 0) && (
         <>
-          <SectionTitle action={<Link to="/shop?promo=1" className="text-sm font-semibold text-brand">All deals</Link>}>🔥 On sale today</SectionTitle>
+          <SectionTitle action={<Link to="/shop?promo=1" className="text-sm font-semibold text-brand">{t('home.all_deals')}</Link>}>{t('home.on_sale')}</SectionTitle>
           {promos.isLoading ? (
             <ProductGridSkeleton n={2} />
           ) : (
@@ -120,7 +113,7 @@ export function Home() {
         </>
       )}
 
-      <SectionTitle>⭐ Popular picks</SectionTitle>
+      <SectionTitle>{t('home.popular')}</SectionTitle>
       {featured.isLoading ? (
         <ProductGridSkeleton n={4} />
       ) : featured.error ? (

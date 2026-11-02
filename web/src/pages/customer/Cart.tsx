@@ -7,6 +7,7 @@ import { Button, Card, EmptyState, Notice, ProgressBar, Skeleton } from '../../c
 import { api } from '../../lib/api';
 import { cartSubtotal, useCart } from '../../lib/cart';
 import { money } from '../../lib/format';
+import { useT } from '../../lib/i18n';
 import { useShop } from '../../lib/queries';
 import type { Quote } from '../../lib/types';
 
@@ -23,6 +24,7 @@ export function useCartQuote(fulfillmentType: 'delivery' | 'pickup', discount: {
 
 export function Cart() {
   const navigate = useNavigate();
+  const { t } = useT();
   const lines = useCart((s) => s.lines);
   const setQty = useCart((s) => s.setQty);
   const remove = useCart((s) => s.remove);
@@ -40,9 +42,9 @@ export function Cart() {
     return (
       <EmptyState
         emoji="🧺"
-        title="Your basket is empty"
-        text="Fresh fruit, snacks, household basics — add a few things and they'll show up here."
-        action={<Link to="/shop"><Button size="lg">Start shopping</Button></Link>}
+        title={t('cart.empty_title')}
+        text={t('cart.empty_text')}
+        action={<Link to="/shop"><Button size="lg">{t('cart.start')}</Button></Link>}
       />
     );
   }
@@ -61,14 +63,14 @@ export function Cart() {
   return (
     <div>
       <div className="mb-4 flex items-center justify-between">
-        <h1 className="text-2xl font-extrabold tracking-tight">Your basket</h1>
-        <button className="text-sm font-semibold text-muted" onClick={clear}>Clear</button>
+        <h1 className="text-2xl font-extrabold tracking-tight">{t('cart.title')}</h1>
+        <button className="text-sm font-semibold text-muted" onClick={clear}>{t('cart.clear')}</button>
       </div>
 
       {(issues.length > 0 || (q?.missingProductIds.length ?? 0) > 0) && (
         <Notice tone="warn" className="mb-3">
-          <div className="font-semibold">Some items changed since you added them.</div>
-          <button onClick={fixAll} className="mt-1 font-bold underline">Update my basket</button>
+          <div className="font-semibold">{t('cart.changed')}</div>
+          <button onClick={fixAll} className="mt-1 font-bold underline">{t('cart.update')}</button>
         </Notice>
       )}
 
@@ -85,11 +87,11 @@ export function Cart() {
                 <div className="truncate font-semibold">{l.name}</div>
                 <div className="text-xs text-muted">{l.unit} · {money(ql?.unitPriceCents ?? l.priceCents)}</div>
                 {gone ? (
-                  <div className="text-xs font-semibold text-rose-600">No longer sold</div>
+                  <div className="text-xs font-semibold text-rose-600">{t('cart.no_longer')}</div>
                 ) : ql?.issue === 'insufficient_stock' ? (
-                  <div className="text-xs font-semibold text-orange-600">Only {ql.available} left</div>
+                  <div className="text-xs font-semibold text-orange-600">{t('product.only_left', { n: ql.available })}</div>
                 ) : ql?.issue ? (
-                  <div className="text-xs font-semibold text-rose-600">Out of stock</div>
+                  <div className="text-xs font-semibold text-rose-600">{t('product.out_of_stock')}</div>
                 ) : (
                   <div className="text-sm font-bold">{money((ql?.unitPriceCents ?? l.priceCents) * l.quantity)}</div>
                 )}
@@ -103,10 +105,10 @@ export function Cart() {
       {freeMin != null && shop.data?.deliveryEnabled && (
         <Card className="mt-4">
           {subtotal >= freeMin ? (
-            <p className="font-semibold">🎉 You've unlocked free delivery!</p>
+            <p className="font-semibold">{t('cart.free_unlocked')}</p>
           ) : (
             <>
-              <p className="text-sm font-semibold">Add {money(freeMin - subtotal)} more for free delivery 🚚</p>
+              <p className="text-sm font-semibold">{t('cart.add_more_free', { amount: money(freeMin - subtotal) })}</p>
               <ProgressBar percent={(subtotal / freeMin) * 100} tone="brand" className="mt-2" />
             </>
           )}
@@ -114,14 +116,14 @@ export function Cart() {
       )}
 
       <Card className="mt-4 space-y-1.5">
-        <div className="flex justify-between"><span className="text-muted">Subtotal</span><span className="font-semibold">{money(subtotal)}</span></div>
-        <div className="flex justify-between text-sm"><span className="text-muted">Delivery & discounts</span><span className="text-muted">at checkout</span></div>
+        <div className="flex justify-between"><span className="text-muted">{t('cart.subtotal')}</span><span className="font-semibold">{money(subtotal)}</span></div>
+        <div className="flex justify-between text-sm"><span className="text-muted">{t('cart.delivery_discounts')}</span><span className="text-muted">{t('cart.at_checkout')}</span></div>
         {quote.isFetching && !q ? <Skeleton className="h-4 w-32" /> : q && q.pointsEstimate > 0 && (
-          <div className="pt-1 text-sm font-semibold text-amber-600">⭐ You'll earn about {q.pointsEstimate} points</div>
+          <div className="pt-1 text-sm font-semibold text-amber-600">{t('cart.earn_about', { n: q.pointsEstimate })}</div>
         )}
       </Card>
 
-      {q && q.minOrderRemainingCents > 0 && <Notice tone="info" className="mt-3">Add {money(q.minOrderRemainingCents)} more to reach the {money(shop.data?.minOrderCents ?? 0)} minimum order.</Notice>}
+      {q && q.minOrderRemainingCents > 0 && <Notice tone="info" className="mt-3">{t('cart.min_order', { amount: money(q.minOrderRemainingCents), min: money(shop.data?.minOrderCents ?? 0) })}</Notice>}
 
       <div className="pb-safe fixed inset-x-0 bottom-[68px] z-30 mx-auto max-w-xl px-4 pb-3">
         <Button
@@ -131,7 +133,7 @@ export function Cart() {
           onClick={() => navigate('/checkout')}
           className="shadow-xl"
         >
-          Checkout · {money(subtotal)}
+          {t('cart.checkout', { amount: money(subtotal) })}
         </Button>
       </div>
     </div>

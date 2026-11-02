@@ -2,8 +2,9 @@ import { and, desc, eq, inArray, ne, sql } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { db } from '../db/client.js';
-import { addresses, orderItems, orders, payments, users } from '../db/schema.js';
+import { addresses, orderItems, orders, users } from '../db/schema.js';
 import { badRequest, notFound } from '../lib/errors.js';
+import { tr } from '../lib/i18n.js';
 import { limit } from '../lib/rate-limit.js';
 import { idParam, parse } from '../lib/validate.js';
 import { makeGuards } from '../plugins/auth.js';
@@ -11,7 +12,6 @@ import { addressInputSchema, cartSchema, placeOrderSchema, placeOrder, quoteCart
 import { publicUser, resolvePhoneInput } from '../services/identity.js';
 import { availableDiscounts, loyaltyOverview, markRewardsSeen } from '../services/loyalty.js';
 import { changeOrderStatus, getOrderDetail, serializeOrderSummary } from '../services/orders.js';
-import { getPaymentSession, simulatePaymentByToken, switchToCash } from '../services/payments.js';
 import { getLevels, levelFor } from '../services/settings.js';
 
 export async function customerRoutes(app: FastifyInstance) {
@@ -32,8 +32,9 @@ export async function customerRoutes(app: FastifyInstance) {
   app.patch('/me', async (req) => {
     const body = parse(
       z.object({
-        firstName: z.string().trim().min(1, 'Please enter your name.').max(64).optional(),
+        firstName: z.string().trim().min(1, 'err.name_required').max(64).optional(),
         lastName: z.string().trim().max(64).optional().nullable(),
+        languageCode: z.enum(['km', 'en']).optional(),
       }),
       req.body,
     );
@@ -76,7 +77,7 @@ export async function customerRoutes(app: FastifyInstance) {
     const userId = req.account!.id;
     return db.transaction(async (tx) => {
       const [{ n }] = await tx.select({ n: sql<number>`count(*)::int` }).from(addresses).where(eq(addresses.userId, userId));
-      if (n >= 10) throw badRequest('too_many_addresses', 'You can save up to 10 addresses.');
+      if (n >= 10) throw badRequest('too_many_addresses', tr('err.address_limit'));
       const isDefault = body.isDefault ?? n === 0;
       if (isDefault) await tx.update(addresses).set({ isDefault: false }).where(eq(addresses.userId, userId));
       const [a] = await tx
@@ -98,7 +99,7 @@ export async function customerRoutes(app: FastifyInstance) {
         .set({ ...body, line2: body.line2 || null, postalCode: body.postalCode || null, instructions: body.instructions || null })
         .where(and(eq(addresses.id, id), eq(addresses.userId, userId)))
         .returning();
-      if (!a) throw notFound('Address not found.');
+      if (!a) throw notFound(tr('err.address_missing'));
       return { address: a };
     });
   });
@@ -111,7 +112,7 @@ export async function customerRoutes(app: FastifyInstance) {
         .delete(addresses)
         .where(and(eq(addresses.id, id), eq(addresses.userId, userId)))
         .returning();
-      if (!deleted) throw notFound('Address not found.');
+      if (!deleted) throw notFound(tr('err.address_missing'));
       if (deleted.isDefault) {
         const [next] = await tx.select().from(addresses).where(eq(addresses.userId, userId)).limit(1);
         if (next) await tx.update(addresses).set({ isDefault: true }).where(eq(addresses.id, next.id));
@@ -181,31 +182,6 @@ export async function customerRoutes(app: FastifyInstance) {
     return { order: await getOrderDetail(id, { forUserId: req.account!.id }) };
   });
 
-  // ---------- QR payment ----------
-  app.get('/orders/:id/payment', async (req) => {
-    const { id } = parse(idParam, req.params);
-    return { payment: await getPaymentSession(id, req.account!.id) };
-  });
-
-  app.post('/orders/:id/payment/cash', { config: limit(20) }, async (req) => {
-    const { id } = parse(idParam, req.params);
-    await switchToCash(id, req.account!.id);
-    return { payment: await getPaymentSession(id, req.account!.id) };
-  });
-
-  /** DEMO: the in-app "simulate payment" button (same as scanning the simulated QR). */
-  app.post('/orders/:id/payment/simulate', { config: limit(20) }, async (req) => {
-    const { id } = parse(idParam, req.params);
-    const [p] = await db
-      .select({ token: payments.checkoutToken })
-      .from(payments)
-      .innerJoin(orders, eq(orders.id, payments.orderId))
-      .where(and(eq(payments.orderId, id), eq(orders.userId, req.account!.id)));
-    if (!p?.token) throw notFound('Order not found.');
-    await simulatePaymentByToken(p.token);
-    return { payment: await getPaymentSession(id, req.account!.id) };
-  });
-
   // ---------- Rewards ----------
   app.get('/rewards', async (req) => loyaltyOverview(req.account!));
 
@@ -222,12 +198,6 @@ export async function customerRoutes(app: FastifyInstance) {
       .select({ n: sql<number>`count(*)::int` })
       .from(orders)
       .where(and(eq(orders.userId, u.id), ne(orders.status, 'cancelled'), sql`${orders.status} not in ('delivered','collected')`));
-    const [awaiting] = await db
-      .select({ id: orders.id })
-      .from(orders)
-      .where(and(eq(orders.userId, u.id), eq(orders.status, 'awaiting_payment')))
-      .orderBy(desc(orders.id))
-      .limit(1);
     const overview = await loyaltyOverview(u);
     return {
       user: publicUser(u),
@@ -237,7 +207,6 @@ export async function customerRoutes(app: FastifyInstance) {
       unseen: overview.unseen,
       availableRewards: overview.wallet.filter((w) => w.status === 'available').length,
       activeOrders: active.n,
-      awaitingPaymentOrderId: awaiting?.id ?? null,
     };
   });
 }

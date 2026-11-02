@@ -52,12 +52,12 @@ const schema = z.object({
         .filter((n) => Number.isSafeInteger(n)),
     ),
 
+  /** Language used before a customer picks one, and for messages to people without a saved choice. */
+  DEFAULT_LANGUAGE: z.enum(['km', 'en']).default('km'),
   /** auto = send through Telegram when a bot token exists, otherwise simulate. simulate = never send. */
   NOTIFICATIONS_MODE: z.enum(['auto', 'simulate']).default('auto'),
   /** Enables the "Dev login" buttons outside Telegram. Always disabled in production. */
   DEV_LOGIN_ENABLED: bool(false),
-  /** Allows the clearly-labelled SIMULATED QR payment mode. Defaults to on outside production. */
-  ALLOW_SIMULATED_PAYMENTS: z.string().optional(),
   UPLOAD_DIR: z.string().default('uploads'),
   MAX_UPLOAD_MB: z.coerce.number().default(3),
 });
@@ -77,10 +77,6 @@ export const config = {
   isProd: env.NODE_ENV === 'production',
   isTest: env.NODE_ENV === 'test',
   devLoginEnabled: env.DEV_LOGIN_ENABLED && env.NODE_ENV !== 'production',
-  allowSimulatedPayments:
-    env.ALLOW_SIMULATED_PAYMENTS === undefined || env.ALLOW_SIMULATED_PAYMENTS === ''
-      ? env.NODE_ENV !== 'production'
-      : ['1', 'true', 'yes', 'on'].includes(env.ALLOW_SIMULATED_PAYMENTS.toLowerCase()),
   telegramConfigured: env.TELEGRAM_BOT_TOKEN.length > 0,
   simulateNotifications: env.NOTIFICATIONS_MODE === 'simulate' || env.TELEGRAM_BOT_TOKEN.length === 0,
   publicUrlIsHttps: env.PUBLIC_URL.startsWith('https://'),

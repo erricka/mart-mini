@@ -2,10 +2,12 @@ import { useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { ProductCard, ProductGridSkeleton } from '../../components/ProductCard';
 import { Button, cx, EmptyState, ErrorState } from '../../components/ui';
+import { useT } from '../../lib/i18n';
 import { useCategories, useProducts } from '../../lib/queries';
 
 export function Shop() {
   const [params, setParams] = useSearchParams();
+  const { t } = useT();
   const categoryId = Number(params.get('category')) || undefined;
   const promo = params.get('promo') === '1';
   const [q, setQ] = useState(params.get('q') ?? '');
@@ -34,7 +36,7 @@ export function Shop() {
   return (
     <div>
       <div className="sticky top-0 z-20 -mx-4 bg-bg/95 px-4 pb-3 pt-1 backdrop-blur">
-        <h1 className="mb-3 text-2xl font-extrabold tracking-tight">{current ? `${current.emoji} ${current.name}` : promo ? '🔥 Deals' : 'Shop'}</h1>
+        <h1 className="mb-3 text-2xl font-extrabold tracking-tight">{current ? `${current.emoji} ${current.name}` : promo ? t('shop.deals') : t('shop.title')}</h1>
         <div className="relative">
           <span className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2">🔍</span>
           <input
@@ -43,18 +45,18 @@ export function Shop() {
             onChange={(e) => setQ(e.target.value)}
             type="search"
             enterKeyHint="search"
-            placeholder="Search products"
+            placeholder={t('shop.search')}
             className="w-full rounded-2xl border border-line bg-surface py-3.5 pl-11 pr-10 outline-none focus:border-brand focus:ring-4 focus:ring-brand/15"
           />
           {q && (
-            <button onClick={() => setQ('')} className="absolute right-3 top-1/2 grid h-7 w-7 -translate-y-1/2 place-items-center rounded-full bg-surface-2 text-sm" aria-label="Clear search">
+            <button onClick={() => setQ('')} className="absolute right-3 top-1/2 grid h-7 w-7 -translate-y-1/2 place-items-center rounded-full bg-surface-2 text-sm" aria-label={t('shop.clear')}>
               ✕
             </button>
           )}
         </div>
         <div className="no-scrollbar -mx-4 mt-3 flex gap-2 overflow-x-auto px-4">
-          <Chip active={!categoryId && !promo} onClick={() => select()}>All</Chip>
-          <Chip active={promo} onClick={() => select(undefined, true)}>🔥 Deals</Chip>
+          <Chip active={!categoryId && !promo} onClick={() => select()}>{t('shop.all')}</Chip>
+          <Chip active={promo} onClick={() => select(undefined, true)}>{t('shop.deals')}</Chip>
           {cats.data?.map((c) => (
             <Chip key={c.id} active={c.id === categoryId} onClick={() => select(c.id)}>
               {c.emoji} {c.name}
@@ -70,9 +72,9 @@ export function Shop() {
       ) : products.data!.length === 0 ? (
         <EmptyState
           emoji="🔎"
-          title={debounced ? `No results for “${debounced}”` : 'Nothing here yet'}
-          text={debounced ? 'Try another word, or browse all aisles.' : 'Check back soon — we restock daily.'}
-          action={<Button variant="secondary" onClick={() => { setQ(''); select(); }}>Browse everything</Button>}
+          title={debounced ? t('shop.no_results', { q: debounced }) : t('shop.nothing')}
+          text={debounced ? t('shop.try_another') : t('shop.restock')}
+          action={<Button variant="secondary" onClick={() => { setQ(''); select(); }}>{t('shop.browse_all')}</Button>}
         />
       ) : (
         <div className={cx('grid grid-cols-2 gap-3 sm:grid-cols-3', products.isFetching && 'opacity-70 transition')}>

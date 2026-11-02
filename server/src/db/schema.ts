@@ -32,7 +32,7 @@ export const orderStatusEnum = pgEnum('order_status', [
 ]);
 export const paymentStatusEnum = pgEnum('payment_status', ['unpaid', 'paid', 'refunded', 'failed']);
 export const paymentMethodEnum = pgEnum('payment_method', ['cash', 'qr']);
-/** off = QR disabled · simulated = demo QR (development only) · aba_payway = ABA PayWay API (placeholder, to be connected) */
+/** Reserved for a future online/QR payment integration (e.g. ABA PayWay). Not used yet — orders are cash only. */
 export const qrPaymentModeEnum = pgEnum('qr_payment_mode', ['off', 'simulated', 'aba_payway']);
 export const discountTypeEnum = pgEnum('discount_type', ['percent', 'fixed', 'free_delivery', 'free_product']);
 export const customerRewardStatusEnum = pgEnum('customer_reward_status', ['available', 'used', 'revoked']);
@@ -102,6 +102,8 @@ export const addresses = pgTable(
 export const categories = pgTable('categories', {
   id: serial('id').primaryKey(),
   name: text('name').notNull(),
+  /** Optional English name; customers who chose English see it (falls back to `name`). */
+  nameEn: text('name_en'),
   slug: text('slug').notNull().unique(),
   emoji: text('emoji').notNull().default('🛒'),
   color: text('color').notNull().default('#22c55e'),
@@ -118,7 +120,9 @@ export const products = pgTable(
       .notNull()
       .references(() => categories.id),
     name: text('name').notNull(),
+    nameEn: text('name_en'),
     description: text('description').notNull().default(''),
+    descriptionEn: text('description_en'),
     unit: text('unit').notNull().default(''),
     priceCents: integer('price_cents').notNull(),
     /** Original price shown struck-through when the product is on promotion. */
@@ -162,8 +166,9 @@ export const shopSettings = pgTable(
   'shop_settings',
   {
     id: integer('id').primaryKey().default(1),
-    shopName: text('shop_name').notNull().default('Sunny Market'),
-    tagline: text('tagline').notNull().default('Fresh groceries, happy rewards'),
+    shopName: text('shop_name').notNull().default('mart25'),
+    tagline: text('tagline').notNull().default('ទំនិញស្រស់ ពិន្ទុរង្វាន់រាល់ការទិញ'),
+    taglineEn: text('tagline_en'),
     currency: text('currency').notNull().default('USD'),
     deliveryEnabled: boolean('delivery_enabled').notNull().default(true),
     pickupEnabled: boolean('pickup_enabled').notNull().default(true),
@@ -179,7 +184,7 @@ export const shopSettings = pgTable(
     welcomeCouponId: integer('welcome_coupon_id'),
     /** Unlocked rewards expire after N days. Null = never. */
     rewardExpiryDays: integer('reward_expiry_days'),
-    // Payments
+    // Payments (QR fields reserved for a future online-payment integration; unused for now)
     cashEnabled: boolean('cash_enabled').notNull().default(true),
     qrPaymentMode: qrPaymentModeEnum('qr_payment_mode').notNull().default('simulated'),
     qrPaymentInstructions: text('qr_payment_instructions')
@@ -195,6 +200,7 @@ export const shopSettings = pgTable(
 export const levels = pgTable('levels', {
   id: serial('id').primaryKey(),
   name: text('name').notNull(),
+  nameEn: text('name_en'),
   emoji: text('emoji').notNull().default('⭐'),
   minPoints: integer('min_points').notNull().unique(),
   /** 100 = 1×, 125 = 1.25× points earned per purchase. */
@@ -210,7 +216,9 @@ export const coupons = pgTable(
     /** Customer-enterable code. Null = can only be obtained as a reward / welcome gift. */
     code: text('code').unique(),
     title: text('title').notNull(),
+    titleEn: text('title_en'),
     description: text('description').notNull().default(''),
+    descriptionEn: text('description_en'),
     discountType: discountTypeEnum('discount_type').notNull(),
     /** Percent (1-100) for percent coupons, cents for fixed coupons. */
     value: integer('value').notNull().default(0),
@@ -238,7 +246,9 @@ export const coupons = pgTable(
 export const rewards = pgTable('rewards', {
   id: serial('id').primaryKey(),
   title: text('title').notNull(),
+  titleEn: text('title_en'),
   description: text('description').notNull().default(''),
+  descriptionEn: text('description_en'),
   emoji: text('emoji').notNull().default('🎁'),
   pointsRequired: integer('points_required').notNull(),
   couponId: integer('coupon_id')
@@ -352,6 +362,7 @@ export const orderItems = pgTable(
       .notNull()
       .references(() => products.id),
     name: text('name').notNull(),
+    nameEn: text('name_en'),
     unit: text('unit').notNull().default(''),
     emoji: text('emoji').notNull().default('🛒'),
     imageUrl: text('image_url'),

@@ -1,14 +1,16 @@
 import { z } from 'zod';
 import { badRequest } from './errors.js';
+import { isKey, tr } from './i18n.js';
 
 export function parse<T extends z.ZodType>(schema: T, data: unknown): z.infer<T> {
   const r = schema.safeParse(data ?? {});
   if (!r.success) {
     const first = r.error.issues[0];
-    const field = first.path.length ? `${first.path.join('.')}: ` : '';
+    // Schemas use translation keys as custom messages; anything else gets a generic translated message.
+    const message = isKey(first.message) ? tr(first.message) : tr('err.invalid_input', { field: first.path.join('.') || '—' });
     throw badRequest(
       'validation_error',
-      first.message.startsWith('Invalid') ? `${field}${first.message}` : first.message,
+      message,
       r.error.issues.map((i) => ({ path: i.path.join('.'), message: i.message })),
     );
   }

@@ -17,7 +17,7 @@ export async function adminOrderRoutes(app: FastifyInstance) {
   app.get('/orders', async (req) => {
     const q = parse(
       z.object({
-        view: z.enum(['active', 'awaiting_payment', 'completed', 'cancelled', 'all']).default('active'),
+        view: z.enum(['active', 'completed', 'cancelled', 'all']).default('active'),
         status: z.enum(orderStatusEnum.enumValues).optional(),
         q: z.string().trim().max(80).optional(),
         limit: z.coerce.number().int().min(1).max(200).default(50),
@@ -28,7 +28,6 @@ export async function adminOrderRoutes(app: FastifyInstance) {
     const where: SQL[] = [];
     if (q.status) where.push(eq(orders.status, q.status));
     else if (q.view === 'active') where.push(inArray(orders.status, [...ACTIVE]));
-    else if (q.view === 'awaiting_payment') where.push(eq(orders.status, 'awaiting_payment'));
     else if (q.view === 'completed') where.push(inArray(orders.status, [...DONE]));
     else if (q.view === 'cancelled') where.push(eq(orders.status, 'cancelled'));
     if (q.q) {
@@ -54,7 +53,7 @@ export async function adminOrderRoutes(app: FastifyInstance) {
     const counts = await db
       .select({ status: orders.status, n: sql<number>`count(*)::int` })
       .from(orders)
-      .where(inArray(orders.status, [...ACTIVE, 'awaiting_payment']))
+      .where(inArray(orders.status, [...ACTIVE]))
       .groupBy(orders.status);
 
     return {
@@ -75,10 +74,8 @@ export async function adminOrderRoutes(app: FastifyInstance) {
       .select({
         latestOrderId: sql<number>`coalesce(max(${orders.id}), 0)::int`,
         newCount: sql<number>`count(*) filter (where ${orders.status} = 'placed')::int`,
-        awaitingPaymentCount: sql<number>`count(*) filter (where ${orders.status} = 'awaiting_payment')::int`,
         activeCount: sql<number>`count(*) filter (where ${orders.status} in ('placed','confirmed','preparing','out_for_delivery','ready_for_pickup'))::int`,
-        /** Highest id among orders the shop can act on (QR orders count once paid/claimed). */
-        latestActionableId: sql<number>`coalesce(max(${orders.id}) filter (where ${orders.status} <> 'awaiting_payment'), 0)::int`,
+
       })
       .from(orders);
     return row;

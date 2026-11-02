@@ -8,13 +8,16 @@ import { config } from '../../config.js';
 import { db } from '../../db/client.js';
 import { categories, inventoryMovements, products } from '../../db/schema.js';
 import { badRequest, notFound } from '../../lib/errors.js';
+import { tr } from '../../lib/i18n.js';
 import { idParam, parse } from '../../lib/validate.js';
 import { makeGuards } from '../../plugins/auth.js';
 
 const productInput = z.object({
   categoryId: z.number().int().positive(),
-  name: z.string().trim().min(1, 'Product name is required.').max(120),
+  name: z.string().trim().min(1, 'err.product_name').max(120),
+  nameEn: z.string().trim().max(120).nullable().optional(),
   description: z.string().trim().max(2000).default(''),
+  descriptionEn: z.string().trim().max(2000).nullable().optional(),
   unit: z.string().trim().max(40).default(''),
   priceCents: z.number().int().min(0).max(10_000_000),
   compareAtCents: z.number().int().min(0).max(10_000_000).nullable().optional(),
@@ -23,7 +26,7 @@ const productInput = z.object({
     .string()
     .trim()
     .max(500)
-    .refine((v) => v === '' || v.startsWith('/uploads/') || /^https:\/\//.test(v), 'Image must be an uploaded file or an https:// URL.')
+    .refine((v) => v === '' || v.startsWith('/uploads/') || /^https:\/\//.test(v), 'err.image_url')
     .nullable()
     .optional(),
   tags: z.string().trim().max(300).default(''),
@@ -33,13 +36,14 @@ const productInput = z.object({
 
 const categoryInput = z.object({
   name: z.string().trim().min(1).max(60),
+  nameEn: z.string().trim().max(60).nullable().optional(),
   slug: z
     .string()
     .trim()
-    .regex(/^[a-z0-9-]{2,60}$/, 'Slug may only contain lowercase letters, numbers and dashes.')
+    .regex(/^[a-z0-9-]{2,60}$/, 'err.slug')
     .optional(),
   emoji: z.string().trim().min(1).max(16).default('🛒'),
-  color: z.string().regex(/^#[0-9a-fA-F]{6}$/, 'Colour must look like #22c55e').default('#22c55e'),
+  color: z.string().regex(/^#[0-9a-fA-F]{6}$/, 'err.colour').default('#22c55e'),
   sortOrder: z.number().int().default(0),
   active: z.boolean().default(true),
 });
@@ -102,7 +106,7 @@ export async function adminCatalogRoutes(app: FastifyInstance) {
     const created = await db.transaction(async (tx) => {
       const [p] = await tx
         .insert(products)
-        .values({ ...body, imageUrl: body.imageUrl || null, compareAtCents: body.compareAtCents ?? null })
+        .values({ ...body, nameEn: body.nameEn || null, descriptionEn: body.descriptionEn || null, imageUrl: body.imageUrl || null, compareAtCents: body.compareAtCents ?? null })
         .returning();
       if (body.stock > 0) {
         await tx.insert(inventoryMovements).values({
@@ -123,10 +127,10 @@ export async function adminCatalogRoutes(app: FastifyInstance) {
     const body = parse(productInput, req.body);
     const [p] = await db
       .update(products)
-      .set({ ...body, imageUrl: body.imageUrl || null, compareAtCents: body.compareAtCents ?? null, updatedAt: new Date() })
+      .set({ ...body, nameEn: body.nameEn || null, descriptionEn: body.descriptionEn || null, imageUrl: body.imageUrl || null, compareAtCents: body.compareAtCents ?? null, updatedAt: new Date() })
       .where(eq(products.id, id))
       .returning();
-    if (!p) throw notFound('Product not found.');
+    if (!p) throw notFound(tr('err.product_not_found'));
     return { product: p };
   });
 
@@ -143,9 +147,9 @@ export async function adminCatalogRoutes(app: FastifyInstance) {
     );
     return db.transaction(async (tx) => {
       const [p] = await tx.select().from(products).where(eq(products.id, id)).for('update');
-      if (!p) throw notFound('Product not found.');
+      if (!p) throw notFound(tr('err.product_not_found'));
       const newStock = body.mode === 'set' ? body.quantity : p.stock + body.quantity;
-      if (newStock < 0) throw badRequest('negative_stock', `Stock can't go below zero (currently ${p.stock}).`);
+      if (newStock < 0) throw badRequest('negative_stock', tr('err.negative_stock', { n: p.stock }));
       const delta = newStock - p.stock;
       if (delta === 0) return { product: p };
       const [updated] = await tx.update(products).set({ stock: newStock, updatedAt: new Date() }).where(eq(products.id, id)).returning();
@@ -188,7 +192,7 @@ export async function adminCatalogRoutes(app: FastifyInstance) {
     const body = parse(categoryInput, req.body);
     const [c] = await db
       .insert(categories)
-      .values({ ...body, slug: body.slug ?? slugify(body.name) })
+      .values({ ...body, nameEn: body.nameEn || null, slug: body.slug ?? slugify(body.nameEn || body.name) })
       .returning();
     return reply.status(201).send({ category: c });
   });
@@ -198,22 +202,22 @@ export async function adminCatalogRoutes(app: FastifyInstance) {
     const body = parse(categoryInput, req.body);
     const [c] = await db
       .update(categories)
-      .set({ ...body, slug: body.slug ?? undefined })
+      .set({ ...body, nameEn: body.nameEn || null, slug: body.slug ?? undefined })
       .where(eq(categories.id, id))
       .returning();
-    if (!c) throw notFound('Category not found.');
+    if (!c) throw notFound(tr('err.category_not_found'));
     return { category: c };
   });
 
   // ---------- Image upload (local disk; swap for S3/R2 in production) ----------
   app.post('/uploads', async (req) => {
     const file = await req.file();
-    if (!file) throw badRequest('no_file', 'Please choose an image.');
+    if (!file) throw badRequest('no_file', tr('err.no_file'));
     const type = IMAGE_TYPES[file.mimetype];
-    if (!type) throw badRequest('bad_type', 'Please upload a JPG, PNG or WebP image.');
+    if (!type) throw badRequest('bad_type', tr('err.bad_image_type'));
     const buf = await file.toBuffer();
-    if (file.file.truncated) throw badRequest('too_large', `Images must be under ${config.MAX_UPLOAD_MB} MB.`);
-    if (!type.magic(buf)) throw badRequest('bad_type', "That file doesn't look like a valid image.");
+    if (file.file.truncated) throw badRequest('too_large', tr('err.image_too_large', { n: config.MAX_UPLOAD_MB }));
+    if (!type.magic(buf)) throw badRequest('bad_type', tr('err.bad_image'));
     await mkdir(config.uploadDir, { recursive: true });
     const name = `${randomUUID()}.${type.ext}`;
     await writeFile(join(config.uploadDir, name), buf);

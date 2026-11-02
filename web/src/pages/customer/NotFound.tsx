@@ -1,6 +1,8 @@
 import { Link } from 'react-router-dom';
 import { Button, EmptyState } from '../../components/ui';
+import { useT } from '../../lib/i18n';
 
 export function NotFound() {
-  return <EmptyState emoji="🧭" title="This aisle doesn't exist" text="The page you're looking for isn't here." action={<Link to="/"><Button>Go home</Button></Link>} />;
+  const { t } = useT();
+  return <EmptyState emoji="🧭" title={t('nf.title')} text={t('nf.text')} action={<Link to="/"><Button>{t('common.go_home')}</Button></Link>} />;
 }

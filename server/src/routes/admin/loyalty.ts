@@ -4,16 +4,17 @@ import { z } from 'zod';
 import { db } from '../../db/client.js';
 import { coupons, levels, products, rewards, shopSettings } from '../../db/schema.js';
 import { badRequest, isUniqueViolation, notFound } from '../../lib/errors.js';
+import { tr } from '../../lib/i18n.js';
 import { idParam, parse } from '../../lib/validate.js';
 import { makeGuards } from '../../plugins/auth.js';
 import { describeCoupon } from '../../services/loyalty.js';
-import { providerStatus } from '../../services/payments.js';
 import { getLevels, getSettings } from '../../services/settings.js';
 
 const settingsInput = z.object({
   shopName: z.string().trim().min(1).max(60),
   tagline: z.string().trim().max(120),
-  currency: z.string().regex(/^[A-Z]{3}$/, 'Use a 3-letter currency code like USD.'),
+  taglineEn: z.string().trim().max(120).nullable().optional(),
+  currency: z.string().regex(/^[A-Z]{3}$/, 'err.currency'),
   deliveryEnabled: z.boolean(),
   pickupEnabled: z.boolean(),
   deliveryFeeCents: z.number().int().min(0).max(100_000),
@@ -26,10 +27,6 @@ const settingsInput = z.object({
   signupBonusPoints: z.number().int().min(0).max(10_000),
   welcomeCouponId: z.number().int().positive().nullable(),
   rewardExpiryDays: z.number().int().min(1).max(3650).nullable(),
-  cashEnabled: z.boolean(),
-  qrPaymentMode: z.enum(['off', 'simulated', 'aba_payway']),
-  qrPaymentInstructions: z.string().trim().max(300),
-  paymentWindowMinutes: z.number().int().min(5).max(24 * 60),
 });
 
 const benefitInput = z
@@ -41,9 +38,9 @@ const benefitInput = z
     maxDiscountCents: z.number().int().min(0).max(10_000_000).nullable().optional(),
   })
   .superRefine((b, ctx) => {
-    if (b.discountType === 'percent' && (b.value < 1 || b.value > 100)) ctx.addIssue({ code: 'custom', message: 'Percent must be 1–100.' });
-    if (b.discountType === 'fixed' && b.value < 1) ctx.addIssue({ code: 'custom', message: 'Enter the discount amount.' });
-    if (b.discountType === 'free_product' && !b.freeProductId) ctx.addIssue({ code: 'custom', message: 'Choose the gift product.' });
+    if (b.discountType === 'percent' && (b.value < 1 || b.value > 100)) ctx.addIssue({ code: 'custom', message: 'err.percent' });
+    if (b.discountType === 'fixed' && b.value < 1) ctx.addIssue({ code: 'custom', message: 'err.fixed_amount' });
+    if (b.discountType === 'free_product' && !b.freeProductId) ctx.addIssue({ code: 'custom', message: 'err.gift_required' });
   });
 
 const couponInput = benefitInput.and(
@@ -52,11 +49,13 @@ const couponInput = benefitInput.and(
       .string()
       .trim()
       .toUpperCase()
-      .regex(/^[A-Z0-9_-]{3,30}$/, 'Codes use 3–30 letters, numbers, - or _.')
+      .regex(/^[A-Z0-9_-]{3,30}$/, 'err.code_format')
       .nullable()
       .optional(),
     title: z.string().trim().min(1).max(80),
+    titleEn: z.string().trim().max(80).nullable().optional(),
     description: z.string().trim().max(300).default(''),
+    descriptionEn: z.string().trim().max(300).nullable().optional(),
     startsAt: z.coerce.date().nullable().optional(),
     endsAt: z.coerce.date().nullable().optional(),
     maxRedemptions: z.number().int().min(1).nullable().optional(),
@@ -68,7 +67,9 @@ const couponInput = benefitInput.and(
 
 const rewardInput = z.object({
   title: z.string().trim().min(1).max(80),
+  titleEn: z.string().trim().max(80).nullable().optional(),
   description: z.string().trim().max(300).default(''),
+  descriptionEn: z.string().trim().max(300).nullable().optional(),
   emoji: z.string().trim().min(1).max(16).default('🎁'),
   pointsRequired: z.number().int().min(1).max(1_000_000),
   isSurprise: z.boolean().default(false),
@@ -81,6 +82,7 @@ const levelsInput = z.object({
     .array(
       z.object({
         name: z.string().trim().min(1).max(40),
+        nameEn: z.string().trim().max(40).nullable().optional(),
         emoji: z.string().trim().min(1).max(16),
         minPoints: z.number().int().min(0).max(10_000_000),
         multiplierPercent: z.number().int().min(100).max(500),
@@ -113,7 +115,6 @@ export async function adminLoyaltyRoutes(app: FastifyInstance) {
       select count(*)::int as unlocked, count(*) filter (where status = 'used')::int as used from customer_rewards`).then((r) => r.rows);
     return {
       settings,
-      paymentProviders: providerStatus(),
       levels: lv,
       rewards: rewardRows.map((r) => ({
         ...r.reward,
@@ -135,33 +136,24 @@ export async function adminLoyaltyRoutes(app: FastifyInstance) {
 
   app.put('/settings', { preHandler: guard.admin }, async (req) => {
     const body = parse(settingsInput, req.body);
-    if (!body.deliveryEnabled && !body.pickupEnabled) throw badRequest('no_fulfillment', 'Enable delivery, pickup, or both.');
-    if (!body.cashEnabled && body.qrPaymentMode === 'off') throw badRequest('no_payment', 'Enable cash, QR payment, or both.');
-    if (body.qrPaymentMode !== 'off' && !providerStatus().find((p) => p.id === body.qrPaymentMode)?.configured) {
-      throw badRequest(
-        'provider_unavailable',
-        body.qrPaymentMode === 'simulated'
-          ? 'Simulated payments are disabled on this server (production).'
-          : 'ABA PayWay is not connected yet — see server/src/services/providers/aba-payway.ts.',
-      );
-    }
+    if (!body.deliveryEnabled && !body.pickupEnabled) throw badRequest('no_fulfillment', tr('err.no_fulfillment'));
     if (body.welcomeCouponId) {
       const [c] = await db.select({ id: coupons.id }).from(coupons).where(eq(coupons.id, body.welcomeCouponId));
-      if (!c) throw badRequest('bad_coupon', 'Welcome coupon not found.');
+      if (!c) throw badRequest('bad_coupon', tr('err.welcome_coupon'));
     }
     await getSettings();
-    const [s] = await db.update(shopSettings).set({ ...body, updatedAt: new Date() }).where(eq(shopSettings.id, 1)).returning();
+    const [s] = await db.update(shopSettings).set({ ...body, taglineEn: body.taglineEn || null, updatedAt: new Date() }).where(eq(shopSettings.id, 1)).returning();
     return { settings: s };
   });
 
   app.put('/levels', { preHandler: guard.admin }, async (req) => {
     const body = parse(levelsInput, req.body);
     const sorted = [...body.levels].sort((a, b) => a.minPoints - b.minPoints);
-    if (sorted[0].minPoints !== 0) throw badRequest('base_level', 'The first level must start at 0 points.');
-    if (new Set(sorted.map((l) => l.minPoints)).size !== sorted.length) throw badRequest('dup_level', 'Each level needs a different point threshold.');
+    if (sorted[0].minPoints !== 0) throw badRequest('base_level', tr('err.base_level'));
+    if (new Set(sorted.map((l) => l.minPoints)).size !== sorted.length) throw badRequest('dup_level', tr('err.dup_level'));
     await db.transaction(async (tx) => {
       await tx.delete(levels);
-      await tx.insert(levels).values(sorted);
+      await tx.insert(levels).values(sorted.map((l) => ({ ...l, nameEn: l.nameEn || null })));
     });
     return { levels: await getLevels() };
   });
@@ -169,7 +161,7 @@ export async function adminLoyaltyRoutes(app: FastifyInstance) {
   async function assertGift(freeProductId?: number | null) {
     if (!freeProductId) return;
     const [p] = await db.select({ id: products.id }).from(products).where(eq(products.id, freeProductId));
-    if (!p) throw badRequest('bad_gift', 'Gift product not found.');
+    if (!p) throw badRequest('bad_gift', tr('err.gift_not_found'));
   }
 
   app.post('/rewards', { preHandler: guard.admin }, async (req, reply) => {
@@ -180,7 +172,9 @@ export async function adminLoyaltyRoutes(app: FastifyInstance) {
         .insert(coupons)
         .values({
           title: body.title,
+          titleEn: body.titleEn || null,
           description: body.description,
+          descriptionEn: body.descriptionEn || null,
           ...body.benefit,
           freeProductId: body.benefit.discountType === 'free_product' ? body.benefit.freeProductId : null,
           code: null,
@@ -190,7 +184,7 @@ export async function adminLoyaltyRoutes(app: FastifyInstance) {
         .returning();
       const [r] = await tx
         .insert(rewards)
-        .values({ title: body.title, description: body.description, emoji: body.emoji, pointsRequired: body.pointsRequired, isSurprise: body.isSurprise, active: body.active, couponId: coupon.id })
+        .values({ title: body.title, titleEn: body.titleEn || null, description: body.description, descriptionEn: body.descriptionEn || null, emoji: body.emoji, pointsRequired: body.pointsRequired, isSurprise: body.isSurprise, active: body.active, couponId: coupon.id })
         .returning();
       return r;
     });
@@ -204,15 +198,17 @@ export async function adminLoyaltyRoutes(app: FastifyInstance) {
     const reward = await db.transaction(async (tx) => {
       const [r] = await tx
         .update(rewards)
-        .set({ title: body.title, description: body.description, emoji: body.emoji, pointsRequired: body.pointsRequired, isSurprise: body.isSurprise, active: body.active })
+        .set({ title: body.title, titleEn: body.titleEn || null, description: body.description, descriptionEn: body.descriptionEn || null, emoji: body.emoji, pointsRequired: body.pointsRequired, isSurprise: body.isSurprise, active: body.active })
         .where(eq(rewards.id, id))
         .returning();
-      if (!r) throw notFound('Reward not found.');
+      if (!r) throw notFound(tr('err.reward_missing'));
       await tx
         .update(coupons)
         .set({
           title: body.title,
+          titleEn: body.titleEn || null,
           description: body.description,
+          descriptionEn: body.descriptionEn || null,
           ...body.benefit,
           freeProductId: body.benefit.discountType === 'free_product' ? body.benefit.freeProductId : null,
           updatedAt: new Date(),
@@ -225,11 +221,13 @@ export async function adminLoyaltyRoutes(app: FastifyInstance) {
 
   async function saveCoupon(id: number | null, raw: unknown) {
     const body = parse(couponInput, raw);
-    if (body.isPublic && !body.code) throw badRequest('code_required', 'Public coupons need a code customers can enter.');
-    if (body.startsAt && body.endsAt && body.endsAt <= body.startsAt) throw badRequest('bad_dates', 'End date must be after the start date.');
+    if (body.isPublic && !body.code) throw badRequest('code_required', tr('err.code_required'));
+    if (body.startsAt && body.endsAt && body.endsAt <= body.startsAt) throw badRequest('bad_dates', tr('err.bad_dates'));
     await assertGift(body.freeProductId);
     const values = {
       ...body,
+      titleEn: body.titleEn || null,
+      descriptionEn: body.descriptionEn || null,
       code: body.code || null,
       freeProductId: body.discountType === 'free_product' ? body.freeProductId : null,
       perCustomerLimit: body.perCustomerLimit ?? null,
@@ -238,10 +236,10 @@ export async function adminLoyaltyRoutes(app: FastifyInstance) {
     try {
       if (id == null) return (await db.insert(coupons).values(values).returning())[0];
       const [c] = await db.update(coupons).set(values).where(eq(coupons.id, id)).returning();
-      if (!c) throw notFound('Coupon not found.');
+      if (!c) throw notFound(tr('err.coupon_missing'));
       return c;
     } catch (err) {
-      if (isUniqueViolation(err)) throw badRequest('code_taken', 'Another coupon already uses this code.');
+      if (isUniqueViolation(err)) throw badRequest('code_taken', tr('err.code_taken'));
       throw err;
     }
   }
@@ -250,7 +248,7 @@ export async function adminLoyaltyRoutes(app: FastifyInstance) {
   app.put('/coupons/:id', { preHandler: guard.admin }, async (req) => {
     const { id } = parse(idParam, req.params);
     const linked = await db.select({ id: rewards.id }).from(rewards).where(inArray(rewards.couponId, [id]));
-    if (linked.length) throw badRequest('reward_coupon', 'Edit this one from the milestone rewards list.');
+    if (linked.length) throw badRequest('reward_coupon', tr('err.reward_coupon'));
     return { coupon: await saveCoupon(id, req.body) };
   });
 }

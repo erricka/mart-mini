@@ -1,5 +1,6 @@
 import confetti from 'canvas-confetti';
 import { useEffect, useRef, useState, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode, type TextareaHTMLAttributes } from 'react';
+import { useT } from '../lib/i18n';
 import { haptic } from '../lib/telegram';
 
 const cx = (...c: (string | false | null | undefined)[]) => c.filter(Boolean).join(' ');
@@ -79,27 +80,31 @@ export function EmptyState({ emoji, title, text, action }: { emoji: string; titl
 }
 
 export function ErrorState({ error, onRetry }: { error: unknown; onRetry?: () => void }) {
-  const message = error instanceof Error ? error.message : 'Something went wrong.';
+  const { t } = useT();
+  const message = error instanceof Error ? error.message : t('common.error_generic');
   return (
     <div className="flex flex-col items-center px-6 py-12 text-center">
       <div className="mb-3 text-5xl">😕</div>
-      <h3 className="font-bold">Oops — that didn't load</h3>
+      <h3 className="font-bold">{t('common.error_title')}</h3>
       <p className="mt-1 max-w-xs text-sm text-muted">{message}</p>
       {onRetry && (
         <Button variant="secondary" className="mt-4" onClick={onRetry}>
-          Try again
+          {t('common.try_again')}
         </Button>
       )}
     </div>
   );
 }
 
-export const PageLoader = ({ label = 'Loading…' }: { label?: string }) => (
-  <div className="flex flex-col items-center justify-center gap-3 py-24 text-muted">
-    <Spinner />
-    <span className="text-sm">{label}</span>
-  </div>
-);
+export function PageLoader({ label }: { label?: string }) {
+  const { t } = useT();
+  return (
+    <div className="flex flex-col items-center justify-center gap-3 py-24 text-muted">
+      <Spinner />
+      <span className="text-sm">{label ?? t('common.loading')}</span>
+    </div>
+  );
+}
 
 export function Field({ label, hint, error, children }: { label: string; hint?: ReactNode; error?: string | null; children: ReactNode }) {
   return (
@@ -137,6 +142,7 @@ export function Toggle({ checked, onChange, label, hint }: { checked: boolean; o
 
 /** Bottom sheet on phones, centred dialog on larger screens. */
 export function Sheet({ open, onClose, title, children, wide }: { open: boolean; onClose: () => void; title?: string; children: ReactNode; wide?: boolean }) {
+  const { t } = useT();
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
@@ -163,7 +169,7 @@ export function Sheet({ open, onClose, title, children, wide }: { open: boolean;
         {title && (
           <div className="mb-4 flex items-center justify-between gap-3">
             <h2 className="text-lg font-bold">{title}</h2>
-            <button onClick={onClose} className="grid h-9 w-9 place-items-center rounded-full bg-surface-2 text-muted" aria-label="Close">
+            <button onClick={onClose} className="grid h-9 w-9 place-items-center rounded-full bg-surface-2 text-muted" aria-label={t('common.close')}>
               ✕
             </button>
           </div>

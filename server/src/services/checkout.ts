@@ -21,11 +21,11 @@ import {
 } from '../db/schema.js';
 import { badRequest, conflict, isUniqueViolation } from '../lib/errors.js';
 import { formatMoney, orderCode } from '../lib/format.js';
+import { pick, tr, userLang } from '../lib/i18n.js';
 import { normalizePhone } from '../lib/phone.js';
 import { lockUser } from './loyalty.js';
 import { kickNotifications, queueNotification } from './notifications.js';
 import { notifyStaffNewOrder } from './orders.js';
-import { createQrPaymentRecord, qrModeUsable } from './payments.js';
 import { calculateQuote, type Quote } from './pricing.js';
 import { getLevels, getSettings, levelFor } from './settings.js';
 
@@ -40,18 +40,19 @@ export const cartSchema = z.object({
 
 export const addressInputSchema = z.object({
   label: z.string().trim().max(30).optional().default('Home'),
-  line1: z.string().trim().min(3, 'Please enter your street address.').max(200),
+  line1: z.string().trim().min(3, 'err.street_required').max(200),
   line2: z.string().trim().max(200).optional().nullable(),
-  city: z.string().trim().min(2, 'Please enter your city.').max(100),
+  city: z.string().trim().min(2, 'err.city_required').max(100),
   postalCode: z.string().trim().max(20).optional().nullable(),
   instructions: z.string().trim().max(300).optional().nullable(),
 });
 
 export const placeOrderSchema = cartSchema.extend({
   idempotencyKey: z.string().min(8).max(100),
-  paymentMethod: z.enum(['cash', 'qr']),
-  contactName: z.string().trim().min(1, 'Please enter a contact name.').max(80),
-  contactPhone: z.string().trim().min(5, 'Please enter a phone number.').max(30),
+  // Cash on delivery / at pickup only for now (online payment will plug in here later).
+  paymentMethod: z.literal('cash').default('cash'),
+  contactName: z.string().trim().min(1, 'err.contact_name').max(80),
+  contactPhone: z.string().trim().min(5, 'err.contact_phone').max(30),
   addressId: z.number().int().positive().optional().nullable(),
   address: addressInputSchema.extend({ save: z.boolean().optional().default(true) }).optional().nullable(),
   note: z.string().trim().max(500).optional().nullable(),
@@ -74,10 +75,10 @@ async function resolveDiscount(ex: Executor, userId: number, input: CartInput, l
       .from(customerRewards)
       .where(and(eq(customerRewards.id, input.customerRewardId), eq(customerRewards.userId, userId)));
     const [cr] = lock ? await q.for('update') : await q;
-    if (!cr) return { ...none, error: 'Reward not found.' };
-    if (cr.status === 'used') return { ...none, error: 'This reward has already been used.' };
-    if (cr.status !== 'available') return { ...none, error: 'This reward is no longer available.' };
-    if (cr.expiresAt && cr.expiresAt < new Date()) return { ...none, error: 'This reward has expired.' };
+    if (!cr) return { ...none, error: tr('err.reward_not_found') };
+    if (cr.status === 'used') return { ...none, error: tr('err.reward_used') };
+    if (cr.status !== 'available') return { ...none, error: tr('err.reward_unavailable') };
+    if (cr.expiresAt && cr.expiresAt < new Date()) return { ...none, error: tr('err.reward_expired') };
     const [coupon] = await ex.select().from(coupons).where(eq(coupons.id, cr.couponId));
     return { coupon, customerReward: cr, error: null };
   }
@@ -85,9 +86,9 @@ async function resolveDiscount(ex: Executor, userId: number, input: CartInput, l
   if (code) {
     const q = ex.select().from(coupons).where(sql`upper(${coupons.code}) = ${code}`);
     const [coupon] = lock ? await q.for('update') : await q;
-    if (!coupon) return { ...none, error: "We couldn't find that coupon code." };
+    if (!coupon) return { ...none, error: tr('err.coupon_not_found') };
     if (coupon.maxRedemptions != null && coupon.redeemedCount >= coupon.maxRedemptions) {
-      return { ...none, error: 'This coupon has been fully redeemed.' };
+      return { ...none, error: tr('err.coupon_exhausted') };
     }
     if (coupon.perCustomerLimit != null) {
       const [{ n }] = await ex
@@ -100,7 +101,7 @@ async function resolveDiscount(ex: Executor, userId: number, input: CartInput, l
             eq(couponRedemptions.status, 'active'),
           ),
         );
-      if (n >= coupon.perCustomerLimit) return { ...none, error: "You've already used this coupon." };
+      if (n >= coupon.perCustomerLimit) return { ...none, error: tr('err.coupon_used_by_you') };
     }
     return { coupon, customerReward: null, error: null };
   }
@@ -137,11 +138,13 @@ export async function quoteCart(user: User, input: CartInput) {
   const ids = new Set(input.items.map((i) => i.productId));
   if (discount.coupon?.discountType === 'free_product' && discount.coupon.freeProductId) ids.add(discount.coupon.freeProductId);
   const rows = ids.size ? await db.select().from(products).where(inArray(products.id, [...ids])) : [];
-  const byId = new Map(rows.map((p) => [p.id, p]));
+  // Display names in the customer's language.
+  const byId = new Map(rows.map((p) => [p.id, { ...p, name: pick(p.name, p.nameEn) }]));
+  if (discount.coupon) discount.coupon = { ...discount.coupon, title: pick(discount.coupon.title, discount.coupon.titleEn) };
   const level = levelFor(allLevels, user.pointsBalance).current;
   const quote = buildQuote(input, byId, settings, discount, level.multiplierPercent);
   const missing = input.items.filter((i) => !byId.has(i.productId)).map((i) => i.productId);
-  if (missing.length) quote.issues.push('Some items in your cart are no longer sold. Please remove them.');
+  if (missing.length) quote.issues.push(tr('err.items_gone'));
   return {
     ...quote,
     canPlace: quote.issues.length === 0 && missing.length === 0,
@@ -167,9 +170,9 @@ async function findOrderByKey(userId: number, key: string) {
  *  - reward/coupon double use: conditional status update + atomic redemption counter
  */
 export async function placeOrder(user: User, input: PlaceOrderInput): Promise<{ orderId: number; replayed: boolean }> {
-  if (input.items.length === 0) throw badRequest('empty_cart', 'Your cart is empty.');
+  if (input.items.length === 0) throw badRequest('empty_cart', tr('err.empty_cart'));
   const phone = normalizePhone(input.contactPhone);
-  if (!phone) throw badRequest('invalid_phone', 'Please enter a valid phone number (7–15 digits).');
+  if (!phone) throw badRequest('invalid_phone', tr('err.invalid_phone'));
 
   const prior = await findOrderByKey(user.id, input.idempotencyKey);
   if (prior) return { orderId: prior.id, replayed: true };
@@ -185,9 +188,6 @@ export async function placeOrder(user: User, input: PlaceOrderInput): Promise<{ 
       if (dup) return { orderId: dup.id, replayed: true };
 
       const [settings, allLevels] = await Promise.all([getSettings(tx), getLevels(tx)]);
-      if (input.paymentMethod === 'qr' && !qrModeUsable(settings)) throw badRequest('payment_unavailable', 'QR payment is not available right now. Please choose cash.');
-      if (input.paymentMethod === 'cash' && !settings.cashEnabled) throw badRequest('payment_unavailable', 'Cash payment is not available. Please pay by QR.');
-      const byQr = input.paymentMethod === 'qr';
 
       // 2) Delivery address (only for delivery).
       let address: { line1: string; line2: string | null; city: string; postalCode: string | null; instructions: string | null } | null =
@@ -198,7 +198,7 @@ export async function placeOrder(user: User, input: PlaceOrderInput): Promise<{ 
             .select()
             .from(addresses)
             .where(and(eq(addresses.id, input.addressId), eq(addresses.userId, u.id)));
-          if (!a) throw badRequest('address_not_found', 'Please choose a delivery address.');
+          if (!a) throw badRequest('address_not_found', tr('err.address_not_found'));
           address = a;
         } else if (input.address) {
           const a = input.address;
@@ -208,7 +208,7 @@ export async function placeOrder(user: User, input: PlaceOrderInput): Promise<{ 
             if (n < 10) await tx.insert(addresses).values({ userId: u.id, label: a.label || 'Home', ...address, isDefault: n === 0 });
           }
         } else {
-          throw badRequest('address_required', 'Please add a delivery address.');
+          throw badRequest('address_required', tr('err.address_required'));
         }
       }
 
@@ -227,7 +227,7 @@ export async function placeOrder(user: User, input: PlaceOrderInput): Promise<{ 
         .for('update');
       const byId = new Map(locked.map((p) => [p.id, p]));
       const missing = input.items.filter((i) => !byId.has(i.productId));
-      if (missing.length) throw conflict('product_unavailable', 'Some items in your cart are no longer sold.', { missing });
+      if (missing.length) throw conflict('product_unavailable', tr('err.items_gone'), { missing });
 
       const level = levelFor(allLevels, u.pointsBalance).current;
       const quote = buildQuote(input, byId, settings, discount, level.multiplierPercent);
@@ -244,8 +244,6 @@ export async function placeOrder(user: User, input: PlaceOrderInput): Promise<{ 
           userId: u.id,
           idempotencyKey: input.idempotencyKey,
           fulfillmentType: input.fulfillmentType,
-          // QR orders wait for payment before the shop sees them; stock is reserved meanwhile.
-          status: byQr ? 'awaiting_payment' : 'placed',
           paymentMethod: input.paymentMethod,
           subtotalCents: quote.subtotalCents,
           discountCents: quote.discountCents,
@@ -271,6 +269,7 @@ export async function placeOrder(user: User, input: PlaceOrderInput): Promise<{ 
           orderId: order.id,
           productId: l.productId,
           name: l.name,
+          nameEn: byId.get(l.productId)?.nameEn ?? null,
           unit: l.unit,
           emoji: l.emoji,
           imageUrl: l.imageUrl,
@@ -293,7 +292,7 @@ export async function placeOrder(user: User, input: PlaceOrderInput): Promise<{ 
           .set({ stock: sql`${products.stock} - ${q}`, updatedAt: now })
           .where(and(eq(products.id, productId), gte(products.stock, q)))
           .returning({ stock: products.stock });
-        if (!upd.length) throw conflict('out_of_stock', `${byId.get(productId)?.name ?? 'An item'} just sold out.`);
+        if (!upd.length) throw conflict('out_of_stock', tr('err.sold_out', { name: byId.get(productId)?.name ?? tr('err.an_item') }));
         await tx.insert(inventoryMovements).values({
           productId,
           delta: -q,
@@ -314,7 +313,7 @@ export async function placeOrder(user: User, input: PlaceOrderInput): Promise<{ 
             c.maxRedemptions != null ? and(eq(coupons.id, c.id), lt(coupons.redeemedCount, c.maxRedemptions)) : eq(coupons.id, c.id),
           )
           .returning({ id: coupons.id });
-        if (!counter.length) throw conflict('coupon_invalid', 'This coupon has been fully redeemed.');
+        if (!counter.length) throw conflict('coupon_invalid', tr('err.coupon_exhausted'));
         await tx.insert(couponRedemptions).values({
           couponId: c.id,
           userId: u.id,
@@ -328,52 +327,33 @@ export async function placeOrder(user: User, input: PlaceOrderInput): Promise<{ 
             .set({ status: 'used', usedAt: now, orderId: order.id })
             .where(and(eq(customerRewards.id, discount.customerReward.id), eq(customerRewards.status, 'available')))
             .returning({ id: customerRewards.id });
-          if (!used.length) throw conflict('coupon_invalid', 'This reward has already been used.');
+          if (!used.length) throw conflict('coupon_invalid', tr('err.reward_used'));
         }
       }
 
       // 8) Payment record (kept separate from fulfilment status).
-      if (byQr) {
-        await createQrPaymentRecord(tx, order, settings);
-      } else {
-        await tx.insert(payments).values({ orderId: order.id, provider: 'cash', amountCents: quote.totalCents, status: 'unpaid' });
-      }
-      await tx.insert(orderEvents).values({
-        orderId: order.id,
-        kind: 'status',
-        status: byQr ? 'awaiting_payment' : 'placed',
-        actorUserId: u.id,
-        actorRole: 'customer',
-      });
+      await tx.insert(payments).values({ orderId: order.id, provider: 'cash', amountCents: quote.totalCents, status: 'unpaid' });
+      await tx.insert(orderEvents).values({ orderId: order.id, kind: 'status', status: 'placed', actorUserId: u.id, actorRole: 'customer' });
 
       // Remember the phone for next time if the profile doesn't have one yet.
       if (!u.phone) await tx.update(users).set({ phone: phone.display, phoneVerified: false }).where(eq(users.id, u.id));
 
-      // 9) Notifications (outbox). Cash orders reach the shop now; QR orders once paid.
-      const total = formatMoney(quote.totalCents, settings.currency);
-      const how = input.fulfillmentType === 'delivery' ? 'delivery' : 'pickup';
-      if (byQr) {
-        await queueNotification(tx, {
-          userId: u.id,
-          chatId: u.telegramId,
-          kind: 'payment_pending',
-          text: `🧾 Order <b>${orderCode(order.id)}</b> (${total}) is reserved for ${settings.paymentWindowMinutes} minutes.\nComplete your QR payment to send it to the shop.`,
-          orderId: order.id,
-          buttonText: '📱 Pay now',
-          buttonPath: `/orders/${order.id}/pay`,
-        });
-      } else {
-        await queueNotification(tx, {
-          userId: u.id,
-          chatId: u.telegramId,
-          kind: 'order_placed',
-          text: `🧾 Thanks! We received order <b>${orderCode(order.id)}</b> (${total}, ${how}, cash).\nWe'll message you when it's confirmed.${quote.pointsEstimate ? `\n⭐ You'll earn ${quote.pointsEstimate} points when it's completed.` : ''}`,
-          orderId: order.id,
-          buttonText: '📍 Track order',
-          buttonPath: `/orders/${order.id}`,
-        });
-        await notifyStaffNewOrder(tx, order.id);
-      }
+      // 9) Notifications (outbox): the customer and every staff member.
+      const lang = userLang(u);
+      const total = formatMoney(quote.totalCents, settings.currency, lang);
+      const how = tr(input.fulfillmentType === 'delivery' ? 'n.how_delivery' : 'n.how_pickup', {}, lang);
+      await queueNotification(tx, {
+        userId: u.id,
+        chatId: u.telegramId,
+        kind: 'order_placed',
+        text:
+          tr('n.placed', { code: orderCode(order.id), total, how }, lang) +
+          (quote.pointsEstimate ? tr('n.will_earn', { n: quote.pointsEstimate }, lang) : ''),
+        orderId: order.id,
+        buttonText: tr('n.btn_track', {}, lang),
+        buttonPath: `/orders/${order.id}`,
+      });
+      await notifyStaffNewOrder(tx, order.id);
 
       return { orderId: order.id, replayed: false };
     });

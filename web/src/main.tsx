@@ -6,6 +6,7 @@ import { App } from './App';
 import { ApiError } from './lib/api';
 import { SessionProvider } from './lib/session';
 import { initTelegram } from './lib/telegram';
+import '@fontsource-variable/kantumruy-pro';
 import './index.css';
 
 initTelegram();

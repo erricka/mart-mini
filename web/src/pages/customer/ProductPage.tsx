@@ -6,6 +6,7 @@ import { QtyStepper } from '../../components/QtyStepper';
 import { Badge, Button, ErrorState, PageLoader } from '../../components/ui';
 import { useCart } from '../../lib/cart';
 import { money } from '../../lib/format';
+import { useT } from '../../lib/i18n';
 import { useProduct, useShop } from '../../lib/queries';
 import { haptic } from '../../lib/telegram';
 import { toast } from '../../lib/toast';
@@ -13,6 +14,7 @@ import { toast } from '../../lib/toast';
 export function ProductPage() {
   const id = Number(useParams().id);
   const navigate = useNavigate();
+  const { t } = useT();
   const q = useProduct(id);
   const shop = useShop();
   const inCart = useCart((s) => s.lines.find((l) => l.productId === id));
@@ -28,10 +30,10 @@ export function ProductPage() {
 
   return (
     <div className="animate-rise">
-      <button onClick={() => navigate(-1)} className="mb-3 text-sm font-semibold text-muted">← Back</button>
+      <button onClick={() => navigate(-1)} className="mb-3 text-sm font-semibold text-muted">{t('common.back')}</button>
       <div className="relative">
         <ProductImage emoji={p.emoji} imageUrl={p.imageUrl} color={category?.color} size="xl" className={!p.inStock ? 'opacity-50 grayscale' : ''} />
-        {p.discountPercent > 0 && <Badge className="absolute left-3 top-3 bg-rose-500 px-3 py-1 text-sm text-white">Save {p.discountPercent}%</Badge>}
+        {p.discountPercent > 0 && <Badge className="absolute left-3 top-3 bg-rose-500 px-3 py-1 text-sm text-white">{t('product.save_pct', { n: p.discountPercent })}</Badge>}
       </div>
       {category && (
         <Link to={`/shop?category=${category.id}`} className="mt-4 inline-block text-sm font-semibold text-brand">
@@ -51,7 +53,7 @@ export function ProductPage() {
         {inCart ? (
           <div className="flex items-center justify-between">
             <div>
-              <div className="font-bold">In your basket</div>
+              <div className="font-bold">{t('product.in_basket')}</div>
               <div className="text-sm text-muted">{money(inCart.quantity * p.priceCents)}</div>
             </div>
             <QtyStepper value={inCart.quantity} max={max} onChange={(v) => setQty(p.id, v)} />
@@ -59,7 +61,7 @@ export function ProductPage() {
         ) : p.inStock ? (
           <>
             <div className="flex items-center justify-between">
-              <span className="font-semibold">Quantity</span>
+              <span className="font-semibold">{t('product.quantity')}</span>
               <QtyStepper value={qty} max={max} onChange={(v) => setLocalQty(Math.max(1, v))} />
             </div>
             <Button
@@ -69,15 +71,15 @@ export function ProductPage() {
               onClick={() => {
                 add(p, qty);
                 haptic('success');
-                toast(`Added ${qty} × ${p.name} 🧺`, 'success');
+                toast(t('product.added', { qty, name: p.name }), 'success');
               }}
             >
-              Add to basket · {money(p.priceCents * qty)}
+              {t('product.add_to_basket', { amount: money(p.priceCents * qty) })}
             </Button>
-            {points > 0 && <p className="mt-2 text-center text-xs text-muted">⭐ Earn about {points} points</p>}
+            {points > 0 && <p className="mt-2 text-center text-xs text-muted">{t('product.earn_about', { n: points })}</p>}
           </>
         ) : (
-          <p className="text-center font-semibold text-muted">Out of stock — check back soon.</p>
+          <p className="text-center font-semibold text-muted">{t('product.oos_soon')}</p>
         )}
       </div>
     </div>

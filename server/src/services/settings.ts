@@ -1,6 +1,7 @@
 import { asc, eq } from 'drizzle-orm';
 import { db, type Executor } from '../db/client.js';
 import { levels, shopSettings, type Level, type ShopSettings } from '../db/schema.js';
+import { pick, tr } from '../lib/i18n.js';
 
 export async function getSettings(ex: Executor = db): Promise<ShopSettings> {
   const [row] = await ex.select().from(shopSettings).where(eq(shopSettings.id, 1));
@@ -21,17 +22,21 @@ const DEFAULT_LEVEL: Level = {
   minPoints: 0,
   multiplierPercent: 100,
   color: '#22c55e',
+  nameEn: null,
   createdAt: new Date(0),
 };
 
+/** Level with its display name in the current language. */
+export const localLevel = (l: Level): Level => ({ ...l, name: pick(l.name, l.nameEn) });
+
 export function levelFor(all: Level[], points: number): { current: Level; next: Level | null } {
   const sorted = [...all].sort((a, b) => a.minPoints - b.minPoints);
-  let current = DEFAULT_LEVEL;
+  let current = { ...DEFAULT_LEVEL, name: tr('rw.member') };
   let next: Level | null = null;
   for (const l of sorted) {
-    if (l.minPoints <= points) current = l;
+    if (l.minPoints <= points) current = localLevel(l);
     else {
-      next = l;
+      next = localLevel(l);
       break;
     }
   }

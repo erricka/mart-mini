@@ -5,13 +5,13 @@ import { config } from '../config.js';
 import { db } from '../db/client.js';
 import { categories, products, type Product } from '../db/schema.js';
 import { badRequest, notFound, unauthorized } from '../lib/errors.js';
+import { pick, tr } from '../lib/i18n.js';
 import { TelegramAuthError, validateInitData, type TelegramUser } from '../lib/telegram-auth.js';
 import { limit } from '../lib/rate-limit.js';
 import { idParam, parse } from '../lib/validate.js';
 import { makeGuards, signOnboarding, signSession } from '../plugins/auth.js';
 import { completeOnboarding, consumeStaffLoginToken, publicUser, resolveTelegramIdentity } from '../services/identity.js';
 import { loyaltyOverview, loyaltyTeaser } from '../services/loyalty.js';
-import { qrModeUsable } from '../services/payments.js';
 import { getSettings } from '../services/settings.js';
 
 export function publicProduct(p: Product) {
@@ -19,8 +19,8 @@ export function publicProduct(p: Product) {
   return {
     id: p.id,
     categoryId: p.categoryId,
-    name: p.name,
-    description: p.description,
+    name: pick(p.name, p.nameEn),
+    description: pick(p.description, p.descriptionEn),
     unit: p.unit,
     priceCents: p.priceCents,
     compareAtCents: onSale ? p.compareAtCents : null,
@@ -57,7 +57,7 @@ export async function publicRoutes(app: FastifyInstance) {
   app.post('/auth/telegram', { config: authLimit }, async (req) => {
     const body = parse(z.object({ initData: z.string().min(1).max(8192) }), req.body);
     if (!config.telegramConfigured) {
-      throw badRequest('telegram_not_configured', 'Telegram login is not configured on the server (TELEGRAM_BOT_TOKEN).');
+      throw badRequest('telegram_not_configured', tr('err.tg_not_configured'));
     }
     try {
       const data = validateInitData(body.initData, config.TELEGRAM_BOT_TOKEN, config.INITDATA_MAX_AGE_SECONDS);
@@ -65,7 +65,7 @@ export async function publicRoutes(app: FastifyInstance) {
     } catch (err) {
       if (err instanceof TelegramAuthError) {
         req.log.warn({ reason: err.message }, 'Rejected Telegram initData');
-        throw unauthorized("We couldn't verify your Telegram session. Please close and reopen the app.");
+        throw unauthorized(tr('err.tg_verify'));
       }
       throw err;
     }
@@ -82,12 +82,12 @@ export async function publicRoutes(app: FastifyInstance) {
       req.body,
     );
     const presets: Record<string, TelegramUser> = {
-      customer: { id: 100000001, first_name: 'Alice', last_name: 'Green', username: 'alice_dev' },
-      admin: { id: 100000009, first_name: 'Sam', last_name: 'Store', username: 'sam_manager' },
+      customer: { id: 100000001, first_name: 'Sophea', last_name: 'Chan', username: 'sophea_dev' },
+      admin: { id: 100000009, first_name: 'Dara', last_name: 'Sok', username: 'dara_mart25' },
     };
     const tg: TelegramUser =
       body.as === 'new'
-        ? { id: 200000000 + Math.floor(Math.random() * 99_999_999), first_name: 'Jamie', last_name: 'Newcomer', username: 'jamie_new' }
+        ? { id: 200000000 + Math.floor(Math.random() * 99_999_999), first_name: 'Vanna', last_name: 'Lim', username: 'vanna_new' }
         : presets[body.as];
     return identityResponse(tg, body.source ?? null);
   });
@@ -103,11 +103,12 @@ export async function publicRoutes(app: FastifyInstance) {
   app.post('/onboarding/complete', { preHandler: guard.onboarding, config: authLimit }, async (req) => {
     const body = parse(
       z.object({
-        firstName: z.string().trim().min(1, 'Please tell us your name.').max(64),
+        firstName: z.string().trim().min(1, 'err.name_required').max(64),
         lastName: z.string().trim().max(64).optional().nullable(),
         phone: z.string().trim().max(30).optional().nullable(),
         contactResponse: z.string().max(8192).optional().nullable(),
         acceptPrivacy: z.boolean(),
+        languageCode: z.enum(['km', 'en']).optional().nullable(),
       }),
       req.body,
     );
@@ -132,7 +133,7 @@ export async function publicRoutes(app: FastifyInstance) {
     const s = await getSettings();
     return {
       shopName: s.shopName,
-      tagline: s.tagline,
+      tagline: pick(s.tagline, s.taglineEn),
       currency: s.currency,
       deliveryEnabled: s.deliveryEnabled,
       pickupEnabled: s.pickupEnabled,
@@ -142,12 +143,6 @@ export async function publicRoutes(app: FastifyInstance) {
       pickupAddress: s.pickupAddress,
       pickupHours: s.pickupHours,
       supportPhone: s.supportPhone,
-      payments: {
-        cashEnabled: s.cashEnabled,
-        qrEnabled: qrModeUsable(s),
-        qrMode: s.qrPaymentMode,
-        paymentWindowMinutes: s.paymentWindowMinutes,
-      },
       devLoginEnabled: config.devLoginEnabled,
       telegramConfigured: config.telegramConfigured,
       notificationsSimulated: config.simulateNotifications,
@@ -160,6 +155,7 @@ export async function publicRoutes(app: FastifyInstance) {
       .select({
         id: categories.id,
         name: categories.name,
+        nameEn: categories.nameEn,
         slug: categories.slug,
         emoji: categories.emoji,
         color: categories.color,
@@ -168,7 +164,7 @@ export async function publicRoutes(app: FastifyInstance) {
       .from(categories)
       .where(eq(categories.active, true))
       .orderBy(asc(categories.sortOrder), asc(categories.name));
-    return { categories: rows };
+    return { categories: rows.map(({ nameEn, ...c }) => ({ ...c, name: pick(c.name, nameEn) })) };
   });
 
   app.get('/products', async (req) => {
@@ -202,8 +198,11 @@ export async function publicRoutes(app: FastifyInstance) {
   app.get('/products/:id', async (req) => {
     const { id } = parse(idParam, req.params);
     const [p] = await db.select().from(products).where(and(eq(products.id, id), eq(products.active, true)));
-    if (!p) throw notFound('This product is no longer available.');
+    if (!p) throw notFound(tr('err.product_gone'));
     const [category] = await db.select().from(categories).where(eq(categories.id, p.categoryId));
-    return { product: publicProduct(p), category: category ? { id: category.id, name: category.name, emoji: category.emoji, color: category.color } : null };
+    return {
+      product: publicProduct(p),
+      category: category ? { id: category.id, name: pick(category.name, category.nameEn), emoji: category.emoji, color: category.color } : null,
+    };
   });
 }

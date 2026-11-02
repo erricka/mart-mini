@@ -7,6 +7,7 @@ import type { FastifyBaseLogger } from 'fastify';
 import { config } from '../config.js';
 import { db } from '../db/client.js';
 import { users } from '../db/schema.js';
+import { tr, userLang } from '../lib/i18n.js';
 import { tgCall, webAppKeyboard } from '../lib/telegram-api.js';
 import { createStaffLoginLink } from './identity.js';
 import { getSettings } from './settings.js';
@@ -34,48 +35,44 @@ export async function handleUpdate(update: TgUpdate, log: FastifyBaseLogger) {
   const settings = await getSettings();
   const shopName = settings.shopName;
   const source = payload && /^[A-Za-z0-9_-]{1,64}$/.test(payload) ? payload : null;
+  // Reply in the sender's saved language (Khmer by default for people who haven't chosen yet).
+  const [sender] = await db.select().from(users).where(eq(users.telegramId, msg.from.id));
+  const lang = userLang(sender);
+  const t = (key: Parameters<typeof tr>[0], vars: Record<string, string | number> = {}) => tr(key, { shop: shopName, ...vars }, lang);
 
   try {
     switch (cmd) {
       case '/start':
       case '/shop':
-        await reply(
-          msg.chat.id,
-          `👋 Welcome to <b>${shopName}</b>!\nOrder groceries for delivery or pickup and earn points on every basket. Tap below to start.`,
-          webAppKeyboard(`🛒 Open ${shopName}`, source ? `/?src=${source}` : '/'),
-        );
+        await reply(msg.chat.id, t('bot.welcome'), webAppKeyboard(t('bot.open'), source ? `/?src=${source}` : '/'));
         return;
       case '/orders':
-        await reply(msg.chat.id, '📦 Your orders and live status:', webAppKeyboard('📍 My orders', '/orders'));
+        await reply(msg.chat.id, t('bot.orders'), webAppKeyboard(t('bot.btn_orders'), '/orders'));
         return;
       case '/rewards':
-        await reply(msg.chat.id, '⭐ Your points and rewards:', webAppKeyboard('🎁 My rewards', '/rewards'));
+        await reply(msg.chat.id, t('bot.rewards'), webAppKeyboard(t('bot.btn_rewards'), '/rewards'));
         return;
       case '/dashboard':
       case '/admin': {
-        const [u] = await db.select().from(users).where(eq(users.telegramId, msg.from.id));
+        const u = sender;
         if (!u || (u.role !== 'staff' && u.role !== 'admin')) {
-          await reply(msg.chat.id, 'This command is for shop staff only.');
+          await reply(msg.chat.id, t('bot.staff_only'));
           return;
         }
         const link = await createStaffLoginLink(u);
         const keyboard = config.publicUrlIsHttps
           ? {
               inline_keyboard: [
-                [{ text: '📋 Open dashboard here', web_app: { url: new URL('/admin', config.PUBLIC_URL).toString() } }],
-                [{ text: '🖥️ Open in browser (10 min link)', url: link }],
+                [{ text: t('bot.btn_dash_here'), web_app: { url: new URL('/admin', config.PUBLIC_URL).toString() } }],
+                [{ text: t('bot.btn_dash_browser'), url: link }],
               ],
             }
           : undefined;
-        await reply(msg.chat.id, `🔐 Staff dashboard for <b>${shopName}</b>.${keyboard ? '' : `\nLogin link (valid 10 minutes, one use):\n${link}`}`, keyboard);
+        await reply(msg.chat.id, t('bot.dashboard') + (keyboard ? '' : t('bot.dashboard_link', { link })), keyboard);
         return;
       }
       default:
-        await reply(
-          msg.chat.id,
-          `I'm the ${shopName} bot 🛒\n/shop — open the shop\n/orders — track orders\n/rewards — points & rewards`,
-          webAppKeyboard(`🛒 Open ${shopName}`, '/'),
-        );
+        await reply(msg.chat.id, t('bot.help'), webAppKeyboard(t('bot.open'), '/'));
     }
   } catch (err) {
     log.warn({ err }, 'Bot reply failed');
@@ -90,16 +87,21 @@ export async function configureBot(log: FastifyBaseLogger) {
   try {
     await tgCall('setMyCommands', {
       commands: [
-        { command: 'shop', description: 'Open the shop' },
-        { command: 'orders', description: 'Track my orders' },
-        { command: 'rewards', description: 'My points & rewards' },
-        { command: 'dashboard', description: 'Staff dashboard' },
+        { command: 'shop', description: tr('bot.cmd_shop', {}, config.DEFAULT_LANGUAGE) },
+        { command: 'orders', description: tr('bot.cmd_orders', {}, config.DEFAULT_LANGUAGE) },
+        { command: 'rewards', description: tr('bot.cmd_rewards', {}, config.DEFAULT_LANGUAGE) },
+        { command: 'dashboard', description: tr('bot.cmd_dashboard', {}, config.DEFAULT_LANGUAGE) },
       ],
+    });
+    // English descriptions for Telegram clients set to English.
+    await tgCall('setMyCommands', {
+      language_code: 'en',
+      commands: (['shop', 'orders', 'rewards', 'dashboard'] as const).map((c) => ({ command: c, description: tr(`bot.cmd_${c}`, {}, 'en') })),
     });
     if (config.TELEGRAM_SET_MENU_BUTTON && config.publicUrlIsHttps) {
       const settings = await getSettings();
       await tgCall('setChatMenuButton', {
-        menu_button: { type: 'web_app', text: '🛒 Shop', web_app: { url: config.PUBLIC_URL } },
+        menu_button: { type: 'web_app', text: tr('bot.menu', {}, config.DEFAULT_LANGUAGE), web_app: { url: config.PUBLIC_URL } },
       });
       log.info(`Bot menu button → ${config.PUBLIC_URL} (${settings.shopName})`);
     }

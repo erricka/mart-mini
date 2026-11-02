@@ -1,9 +1,11 @@
 import { dateTime } from '../lib/format';
+import { useT } from '../lib/i18n';
 import { STATUS_META } from '../lib/status';
 import type { TimelineStep } from '../lib/types';
 import { cx } from './ui';
 
 export function Timeline({ steps }: { steps: TimelineStep[] }) {
+  const { t } = useT();
   return (
     <ol className="relative">
       {steps.map((s, i) => {
@@ -22,7 +24,7 @@ export function Timeline({ steps }: { steps: TimelineStep[] }) {
               {cancelled ? '✕' : s.done && !s.current ? '✓' : STATUS_META[s.status].emoji}
             </span>
             <div className="pt-1.5">
-              <div className={cx('font-semibold', !s.done && 'text-muted', s.current && 'text-ink')}>{s.label}</div>
+              <div className={cx('font-semibold', !s.done && 'text-muted', s.current && 'text-ink')}>{t(`status.${s.status}`)}</div>
               {s.at && <div className="text-xs text-muted">{dateTime(s.at)}</div>}
             </div>
           </li>

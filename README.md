@@ -1,31 +1,55 @@
-# Sunny Market: Telegram Mini App for a supermarket
+# mart25: Telegram Mini App (ខ្មែរ / English)
 
-A Telegram Mini App for a physical supermarket. It has three parts:
+A Telegram Mini App for the **mart25** supermarket. It has three parts:
 
-- **Customer shopping app:** QR-code entry, short onboarding, catalog, cart, delivery or pickup, cash or QR payment, and order tracking.
+- **Customer shopping app:** QR-code entry, short onboarding with a **Khmer or English** language choice, catalog, cart, delivery or pickup, **cash payment**, and order tracking.
 - **Loyalty game:** points, levels, milestone rewards, a welcome gift, badges and celebrations.
-- **Seller dashboard:** live orders, catalog and stock, loyalty setup, customers, insights and printable QR codes.
+- **Seller dashboard:** live orders, catalog and stock, loyalty setup, customers, insights and printable bilingual QR posters.
 
-> Product summary, journeys, architecture, database design and the phased roadmap are in **[docs/PLAN.md](docs/PLAN.md)**.
+> Product summary, journeys, architecture, database design and roadmap: **[docs/PLAN.md](docs/PLAN.md)**.
+> Going live step by step: **[docs/DEPLOY.md](docs/DEPLOY.md)**.
 
-| Customer onboarding (QR first visit) | Checkout → QR payment → tracking |
+| First visit (Khmer) | Shop → basket → checkout → order |
 | --- | --- |
-| ![](docs/screenshots/customer-onboarding.png) | ![](docs/screenshots/customer-checkout-pay.png) |
+| ![](docs/screenshots/customer-onboarding-km.png) | ![](docs/screenshots/customer-shop-checkout-km.png) |
 
-| Seller dashboard: orders | Order detail | Insights |
-| --- | --- | --- |
-| ![](docs/screenshots/dashboard-orders.png) | ![](docs/screenshots/dashboard-order-detail.png) | ![](docs/screenshots/dashboard-insights.png) |
+| Rewards, profile & English mode | Dashboard (Khmer) |
+| --- | --- |
+| ![](docs/screenshots/customer-rewards-profile-en.png) | ![](docs/screenshots/dashboard-orders-km.png) |
+
+## Languages
+
+- On the **first screen** a new customer picks **ភាសាខ្មែរ** or **English**. The choice is saved on their account and can be changed any time in **Profile → Language**. Staff get the same switch in the dashboard.
+- Everything follows the chosen language:
+  - every screen
+  - error, stock and coupon messages from the server
+  - **Telegram bot messages** (each person gets messages in their own language)
+  - Khmer dates (e.g. *2 វិច្ឆិកា, 04:31*)
+- **Shop data is bilingual.** Products, aisles, rewards, coupons, levels and the tagline each have a Khmer field and an **optional English field**. English customers see the English text when it exists, otherwise the Khmer one. The staff picking list shows the Khmer product name.
+- The Khmer font (**Kantumruy Pro**) ships with the app, and line spacing is tuned for Khmer script.
+- Translations live in `web/src/i18n/` (app) and `server/src/lib/i18n.ts` (server and bot messages). Khmer is the default (`DEFAULT_LANGUAGE=km`).
+
+## Payments
+
+**Cash only for now:** cash on delivery, or pay at the counter for pickup. Orders reach the shop immediately, and staff tap **"បានទទួលប្រាក់" (Mark paid)** when the money is collected. Payment status is tracked separately from the order's progress.
+
+Online / QR payment (e.g. ABA) was removed for now. A complete QR flow is preserved in the git history (commit `4c24b89`):
+
+- hold stock while unpaid
+- release the order to the shop when payment is confirmed
+- auto-cancel unpaid orders
+- an ABA PayWay provider placeholder
+
+The database still has the related columns, so it can be brought back without a data migration.
 
 ## Stack
 
-| Layer | Choice | Why |
-| --- | --- | --- |
-| Mini App and dashboard | React 19, Vite, TypeScript, Tailwind 4, TanStack Query | One code-split SPA: customers never download dashboard code. Telegram's official `telegram-web-app.js` handles theme, haptics, BackButton and `requestContact`. |
-| API | Node 22, Fastify 5, zod, JWT | Fast and small. All validation, pricing, discounts and points are computed on the server. |
-| Database | PostgreSQL 16 with Drizzle ORM | Transactions, row locks, unique, partial and CHECK constraints enforce stock, idempotency and once-only rewards in the database. |
-| Bot | Telegram Bot API over `fetch` | Webhook in production, long-polling in dev. Notifications go through an **outbox table**, so a Telegram outage never blocks an order. |
-
-The API serves the built SPA, so you deploy **one service plus Postgres**.
+| Layer | Choice |
+| --- | --- |
+| Mini App and dashboard | React 19, Vite, TypeScript, Tailwind 4, TanStack Query (one code-split SPA) |
+| API | Node 22, Fastify 5, zod, JWT. Prices, discounts and points are computed on the server |
+| Database | PostgreSQL 16 with Drizzle ORM. Transactions, row locks, unique, partial and CHECK constraints |
+| Bot | Telegram Bot API (webhook in production, polling in dev). Notifications use an outbox table |
 
 ## Quick start (local, no Telegram needed)
 
@@ -51,15 +75,13 @@ npm run db:migrate && npm run db:seed
 npm run dev
 ```
 
-Open **http://localhost:5173**. Outside Telegram you get a **DEV MODE** login screen (`DEV_LOGIN_ENABLED=true`, always off in production):
+Open **http://localhost:5173**. Outside Telegram you get a **DEV MODE** login screen (off in production):
 
-- **✨ New customer (QR first visit)** walks through the full onboarding. Add `?src=store` to the URL to simulate the in-store QR.
-- **👩 Alice** is a returning customer with points and order history.
-- **🧑‍💼 Sam** is the shop admin and opens the dashboard at `/admin`.
+- **✨ New customer:** full first visit, starting with the language picker. Add `?src=store` to simulate the in-store QR.
+- **👩 Sophea:** returning customer with points and orders.
+- **🧑‍💼 Dara:** shop admin. Opens the dashboard at `/admin`.
 
-Open the dashboard in one window and the customer app in another (private window). Place an order as a customer and watch it arrive in the dashboard with a toast, an optional sound and a badge. Move it to *Delivered*/*Collected* and the customer's points and milestones update.
-
-`npm run db:reset` drops everything and re-seeds 53 products, 6 customers, about 30 orders, coupons and milestones.
+`npm run db:reset` re-seeds the demo: a Khmer/English catalog of 54 products (jasmine rice, morning glory, Keo Romeat mangoes and more), 6 customers, about 30 orders, coupons and milestones. For production, `npm run db:seed:starter` (or `SEED_ON_START=starter`) creates only the settings, levels, rewards and aisles.
 
 ## Tests
 
@@ -71,138 +93,63 @@ createdb -O market market_test
 npm test
 ```
 
-There are 38 tests: unit tests for Telegram signature checks and pricing, plus **API integration tests against real Postgres**. They cover:
+There are 36 tests: unit tests for Telegram signatures and pricing, plus API integration tests against real Postgres. They cover:
 
-- forged or expired `initData`
-- privacy consent before the account exists
-- double-submitted onboarding
+- onboarding and privacy consent
 - one welcome gift per account and per phone
-- verified contact sharing
 - idempotent checkout
-- **concurrent purchases never overselling**
-- single-use rewards under concurrency
-- per-customer coupon limits
-- points awarded once, only on completion, and reversed once on refund
-- milestone revocation after a refund
-- cancellation restoring stock and rewards
-- QR orders hidden from the shop until paid
-- payment-window expiry releasing stock
+- concurrent purchases never overselling
+- single-use rewards
+- points awarded once on completion and reversed once on refund
+- cancellations
 - role-based access
+- cash only
+- **Khmer/English responses and per-customer Telegram message language**
 
-Set `TEST_DATABASE_URL` to use a different database.
+## Running it in Telegram / production
 
-## Running it inside Telegram
+See **[docs/DEPLOY.md](docs/DEPLOY.md)**. In short:
 
-1. **Create a bot** with [@BotFather](https://t.me/BotFather) (`/newbot`). Put the token in `TELEGRAM_BOT_TOKEN` and the username in `TELEGRAM_BOT_USERNAME`.
-2. **Get an HTTPS URL.** Telegram only opens HTTPS Mini Apps. In dev, tunnel the Vite port, which proxies `/api`:
+1. Create a bot with @BotFather.
+2. Deploy with `render.yaml` (Render Blueprint, Singapore).
+3. Enable the Mini App in BotFather with your Render URL.
+4. Open the bot and tap **🛒 ទិញទំនិញ**. Staff send `/dashboard`.
 
-   ```bash
-   cloudflared tunnel --url http://localhost:5173
-   ```
+Telegram notifications are real when `TELEGRAM_BOT_TOKEN` is set. Without it they're clearly marked **SIMULATED** (logged and shown on each order).
 
-   Set `PUBLIC_URL` to the tunnel URL.
-3. **Register the Mini App** in BotFather: *Bot Settings → Configure Mini App* (the bot's main Mini App) and/or `/newapp` to get a short name (`TELEGRAM_MINIAPP_SHORT_NAME`). Use your `PUBLIC_URL` as the URL.
-4. Set `TELEGRAM_BOT_MODE=polling` (dev) and your own Telegram user ID in `ADMIN_TELEGRAM_IDS`. You can get your ID from [@userinfobot](https://t.me/userinfobot).
-5. Restart `npm run dev`. The bot sets its menu button and commands: `/shop`, `/orders`, `/rewards`, `/dashboard` (staff only; also sends a one-time browser login link valid for 10 minutes).
+## QR codes
 
-Notifications are **real** when a bot token is set. Otherwise they're **SIMULATED**: logged on the server, stored with status `simulated`, and shown on each order in the dashboard. Customers only receive bot messages after they've opened the bot or allowed messages.
-
-## QR codes (store and receipts)
-
-Go to **Dashboard → QR codes** for ready-made codes (`store`, `receipt`, `flyer`, or any custom tag). Each has a PNG download and a printable poster. The links look like this:
-
-```
-https://t.me/<bot>/<short_name>?startapp=store     # with TELEGRAM_MINIAPP_SHORT_NAME
-https://t.me/<bot>?startapp=store                  # bot's main Mini App
-```
-
-The `startapp` tag arrives signed inside `initData`. It's saved as the customer's sign-up source and shown in Insights.
-
-## First-time customer flow
-
-**Scan QR → splash (initData verified server-side) → returning customer goes straight to Home**, or a **new customer** sees:
-
-1. Welcome screen with **Get Started**.
-2. Name (prefilled from Telegram), photo, and an optional phone number via **Telegram's contact sheet** (signed by Telegram and verified on the server) or typed manually. The phone is never assumed.
-3. Short privacy notice and an *I agree* checkbox. **Only now is the account created.** The signup bonus and welcome coupon are granted once, in one transaction.
-4. Celebration screen showing points, the first milestone and the welcome coupon, then **Start Shopping**.
-
-Duplicate accounts and repeated welcome rewards are blocked by unique indexes on the Telegram ID, on `welcome_grants.user_id` and `welcome_grants.phone_key`, and by a partial unique index (one welcome coupon per customer). Customers can edit their name, phone and addresses later in Profile.
-
-## Payments
-
-Payment status (`unpaid / paid / refunded / failed`) is **separate** from fulfilment status.
-
-- **Cash on delivery / at pickup:** the order goes to the shop immediately. Staff mark it *Paid* when they collect the money.
-- **Pay now by QR:** the order is created as **Awaiting payment** and the stock is reserved, but **the shop isn't alerted and doesn't see it as a new order**. The customer gets a payment screen with the QR, amount, reference, countdown and an *Open in ABA Mobile* deep link. Once the payment is confirmed, the order becomes **Placed**, staff get the new-order alert, and the customer gets a message. Unpaid orders are cancelled after `paymentWindowMinutes` (default 30) and the stock is released. Customers can also switch to cash or cancel.
-
-QR providers (Dashboard → Settings → Payments):
-
-| Mode | Status |
-| --- | --- |
-| **Simulated** | **DEMO ONLY, clearly labelled.** Scanning the QR opens a "simulated payment" page, or use the in-app button. No money moves. Automatically disabled in production (`ALLOW_SIMULATED_PAYMENTS`). |
-| **ABA PayWay** | **Placeholder, ready for your ABA API.** See below. |
-
-### Connecting ABA PayWay
-
-Everything around the payment is already built: holding stock, the payment screen, sending the order to the shop once paid, expiry, and notifications. The only file to fill in is **`server/src/services/providers/aba-payway.ts`**:
-
-1. Add `ABA_PAYWAY_MERCHANT_ID`, `ABA_PAYWAY_API_KEY` and `ABA_PAYWAY_BASE_URL` (sandbox first) to `.env`.
-2. `createCharge()`: call ABA's QR/purchase API with `reference` as the transaction id, the amount and currency, and `callbackUrl`. Return `{ qrPayload, appLink }`.
-3. `handleCallback()`: verify ABA's callback (or re-check the transaction with ABA) and return `{ orderReference, paid }`. The route `POST /api/payments/aba_payway/callback` then calls `confirmQrPayment()`, which is idempotent.
-4. Make `isConfigured()` return `true` and select **ABA PayWay** in Settings.
-
-## Deploying
-
-> **Step-by-step production guide (Telegram bot, Render, first login, shop setup, QR posters): [docs/DEPLOY.md](docs/DEPLOY.md).**
-> `render.yaml` deploys the app and Postgres to Render (Singapore) as a Blueprint. On first boot `SEED_ON_START=starter` creates the shop settings, levels, rewards and aisles, with no demo data.
-
-The app is a single Docker image (or plain Node service) plus managed Postgres. It works on Render, Railway, Fly.io or a VPS.
-
-```bash
-docker compose --profile app up --build
-```
-
-That runs a production-like stack locally on http://localhost:3000.
-
-Production checklist:
-
-- `NODE_ENV=production`, a long random `SESSION_SECRET` (`openssl rand -hex 32`), and `DATABASE_URL` (plus `DATABASE_SSL=true` for most managed Postgres).
-- `PUBLIC_URL=https://your-domain`, `TELEGRAM_BOT_MODE=webhook`, and a random `TELEGRAM_WEBHOOK_SECRET`. The webhook is registered on boot.
-- `MIGRATE_ON_START=true` (or run `node dist/db/migrate.js` as a release step).
-- Update the Mini App URL in BotFather to your domain.
-- **Uploads:** product photos are stored on local disk (`server/uploads`). Mount a persistent volume, or swap in S3/R2 for multi-instance deploys.
-- Starter data (settings, levels, rewards, aisles): `SEED_ON_START=starter` or `npm run db:seed:starter`. Demo data for testing only: `node dist/db/seed.js`.
-- Run a **single instance** for the MVP (the notification and expiry workers are in-process). Move them to a job queue before scaling out.
+**Dashboard → កូដ QR** gives ready-made codes for the store poster, receipts and flyers, plus custom tags. Each has a PNG download and a printable **bilingual poster** (Khmer and English). Links look like `https://t.me/<bot>?startapp=store`. The tag is saved as the customer's sign-up source and shown in Insights.
 
 ## Security notes
 
-- `initData` and shared contacts are verified with HMAC-SHA256 (constant-time compare, max age). Unpaid QR links use unguessable tokens.
-- Short-lived JWTs: an onboarding token holds only the verified Telegram identity, and the session role is re-read from the database on every request.
+- Telegram `initData` and shared contacts are verified with HMAC-SHA256 on the server.
+- Short-lived JWTs. The role is re-read from the database on every request.
 - Roles:
   - **customer**
   - **staff:** orders, catalog, customers (read-only), insights, QR
-  - **admin:** everything, including loyalty, settings, roles and manual point adjustments
-- Rate limits are per account (or per IP before sign-in). Helmet security headers and CSP allow Telegram Web's iframe. Upload type is checked by magic bytes.
+  - **admin:** everything, including loyalty, settings, roles and point adjustments
+- Rate limits are per account. Security headers and CSP allow Telegram Web's iframe.
 
 ## Project layout
 
 ```
 server/src
-  routes/            public (auth, onboarding, catalog), customer, payments, telegram, admin/*
-  services/          checkout, orders, loyalty, payments (+ providers/), notifications, identity, bot, pricing
-  db/                schema.ts (all tables & constraints), migrate, seed, reset
+  lib/i18n.ts        server & bot translations (km/en), request language, per-recipient language
+  routes/            public (auth, onboarding, catalog), customer, telegram, admin/*
+  services/          checkout, orders, loyalty, notifications, identity, bot, pricing
+  db/                schema.ts, migrate, seed (starter + demo), reset
 server/test          unit + integration tests
 web/src
-  pages/onboarding   splash, dev login, 4-step onboarding
-  pages/customer     home, shop, product, cart, checkout, pay, orders, tracking, rewards, profile
+  i18n/              en.ts, km.ts (customer) · en-admin.ts, km-admin.ts (dashboard)
+  pages/onboarding   splash, dev login, language → welcome → about → privacy → celebration
+  pages/customer     home, shop, product, cart, checkout, orders, tracking, rewards, profile
   pages/admin        orders, catalog, customers, loyalty, insights, QR codes, settings
-docs/PLAN.md         product & technical plan, DB design, roadmap, future game features
+docs/                PLAN.md, DEPLOY.md, screenshots
 ```
 
-## What's simulated or a placeholder (clearly labelled in the UI)
+## Simulated / development-only (labelled in the UI)
 
-- **Simulated QR payments** (dev only) and the **ABA PayWay** placeholder.
+- **Dev login** (development only).
 - **Telegram notifications** are simulated when no bot token is set.
-- **Dev login** (dev only).
-- **Tracking** is status updates entered by staff. Live GPS is a future feature.
+- **Tracking** is status updates from staff. GPS tracking is a future feature.

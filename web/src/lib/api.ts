@@ -1,3 +1,5 @@
+import { getLang, translate } from './i18n';
+
 export class ApiError extends Error {
   constructor(
     public status: number,
@@ -48,7 +50,7 @@ interface Options {
 }
 
 export async function api<T = any>(path: string, opts: Options = {}): Promise<T> {
-  const headers: Record<string, string> = {};
+  const headers: Record<string, string> = { 'x-lang': getLang() };
   const t = opts.token !== undefined ? opts.token : token;
   if (t) headers.authorization = `Bearer ${t}`;
   let body: BodyInit | undefined;
@@ -61,22 +63,22 @@ export async function api<T = any>(path: string, opts: Options = {}): Promise<T>
   try {
     res = await fetch(`/api${path}`, { method: opts.method ?? (body ? 'POST' : 'GET'), headers, body });
   } catch {
-    throw new ApiError(0, 'network', "Can't reach the shop right now. Check your connection and try again.");
+    throw new ApiError(0, 'network', translate('common.network'));
   }
   const data = await res.json().catch(() => null);
   if (!res.ok) {
     const e = data?.error;
     if (res.status === 401 && opts.token === undefined && token) onUnauthorized?.();
-    throw new ApiError(res.status, e?.code ?? 'error', e?.message ?? `Something went wrong (${res.status}).`, e?.details);
+    throw new ApiError(res.status, e?.code ?? 'error', e?.message ?? translate('common.error_generic'), e?.details);
   }
   return data as T;
 }
 
 /** Fetch a binary resource (e.g. QR image) with the session header. */
 export async function apiBlob(path: string): Promise<Blob> {
-  const res = await fetch(`/api${path}`, { headers: token ? { authorization: `Bearer ${token}` } : {} });
-  if (!res.ok) throw new ApiError(res.status, 'error', 'Could not load file.');
+  const res = await fetch(`/api${path}`, { headers: token ? { authorization: `Bearer ${token}`, 'x-lang': getLang() } : { 'x-lang': getLang() } });
+  if (!res.ok) throw new ApiError(res.status, 'error', translate('common.error_generic'));
   return res.blob();
 }
 
-export const errorMessage = (e: unknown) => (e instanceof Error ? e.message : 'Something went wrong.');
+export const errorMessage = (e: unknown) => (e instanceof Error ? e.message : translate('common.error_generic'));

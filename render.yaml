@@ -3,7 +3,7 @@
 # You'll be asked for the values marked `sync: false`.
 services:
   - type: web
-    name: sunny-market
+    name: mart25
     runtime: node
     region: singapore
     plan: starter            # paid plan: always on (free instances sleep, which delays the bot webhook)
@@ -22,7 +22,7 @@ services:
         value: "22"
       - key: DATABASE_URL
         fromDatabase:
-          name: sunny-market-db
+          name: mart25-db
           property: connectionString
       - key: SESSION_SECRET
         generateValue: true
@@ -43,8 +43,8 @@ services:
       # PUBLIC_URL is detected automatically on Render. Set it only when you add a custom domain.
 
 databases:
-  - name: sunny-market-db
+  - name: mart25-db
     region: singapore
     plan: basic-256mb
-    databaseName: market
+    databaseName: mart25
     user: market

@@ -37,7 +37,7 @@ function initData(user: TelegramUser, startParam?: string) {
   return signQuery(fields, TOKEN);
 }
 
-const call = async (method: 'GET' | 'POST' | 'PUT', url: string, token?: string, body?: unknown) => {
+const call = async (method: 'GET' | 'POST' | 'PUT' | 'PATCH', url: string, token?: string, body?: unknown) => {
   const res = await app.inject({ method, url, headers: token ? { authorization: `Bearer ${token}` } : {}, payload: body as object });
   return { status: res.statusCode, json: res.json() as any };
 };
@@ -322,88 +322,51 @@ describe('Access control', () => {
   });
 });
 
-describe('QR payment: the shop only gets the order after payment', () => {
-  let token: string;
-  beforeAll(async () => {
-    token = (await onboard({ id: 9500, first_name: 'Vanna' }, '+85512000111')).token;
+
+describe('Languages (Khmer / English)', () => {
+  const callLang = async (lang: 'km' | 'en', method: 'GET' | 'POST' | 'PATCH', url: string, token?: string, body?: unknown) => {
+    const res = await app.inject({ method, url, headers: { 'x-lang': lang, ...(token ? { authorization: `Bearer ${token}` } : {}) }, payload: body as object });
+    return { status: res.statusCode, json: res.json() as any };
+  };
+
+  it('serves shop data and errors in the requested language, falling back to Khmer names', async () => {
+    await db.update(products).set({ name: 'ផ្លែប៉ោម', nameEn: 'Apples' }).where(eq(products.id, ids.apples));
+    const km = await callLang('km', 'GET', `/api/products/${ids.apples}`);
+    const en = await callLang('en', 'GET', `/api/products/${ids.apples}`);
+    expect(km.json.product.name).toBe('ផ្លែប៉ោម');
+    expect(en.json.product.name).toBe('Apples');
+    // No English name → Khmer is used for everyone.
+    const choc = await callLang('en', 'GET', `/api/products/${ids.chocolate}`);
+    expect(choc.json.product.name).toBe('Chocolate');
+
+    const token = (await onboard({ id: 9700, first_name: 'Kanha' }, '+85599000111')).token;
+    const bad = await callLang('km', 'POST', '/api/orders', token, {
+      items: [{ productId: ids.apples, quantity: 1 }], fulfillmentType: 'pickup', paymentMethod: 'cash', contactName: 'K', contactPhone: '12', idempotencyKey: randomUUID(),
+    });
+    expect(bad.status).toBe(400);
+    expect(bad.json.error.message).toMatch(/[ក-៿]/); // Khmer script
   });
 
-  const staffSaw = async (orderId: number) =>
-    (await db.select().from(notifications).where(eq(notifications.orderId, orderId))).some((n) => n.kind === 'staff_new_order');
+  it('remembers the language chosen at sign-up and writes Telegram messages in it', async () => {
+    const tg = { id: 9701, first_name: 'Sokha' };
+    const auth = await call('POST', '/api/auth/telegram', undefined, { initData: initData(tg) });
+    const done = await call('POST', '/api/onboarding/complete', auth.json.onboardingToken, { firstName: 'Sokha', phone: '+85599000222', acceptPrivacy: true, languageCode: 'km' });
+    expect(done.json.user.languageCode).toBe('km');
+    const o = (await order(done.json.token)).json.order;
+    const [msg] = (await db.select().from(notifications).where(eq(notifications.orderId, o.id))).filter((n) => n.kind === 'order_placed');
+    expect(msg.text).toMatch(/អរគុណ/);
 
-  it('holds QR orders as awaiting payment, then hands them to the shop once paid', async () => {
-    const stockBefore = (await db.select().from(products).where(eq(products.id, ids.apples)))[0].stock;
-    const o = (await order(token, { paymentMethod: 'qr' })).json.order;
-    expect(o.status).toBe('awaiting_payment');
-    expect((await db.select().from(products).where(eq(products.id, ids.apples)))[0].stock).toBe(stockBefore - 2); // reserved
-    expect(await staffSaw(o.id)).toBe(false);
-    const active = (await call('GET', '/api/admin/orders?view=active', adminToken)).json.orders.map((x: any) => x.id);
-    expect(active).not.toContain(o.id);
-
-    const session = (await call('GET', `/api/orders/${o.id}/payment`, token)).json.payment;
-    expect(session.simulated).toBe(true);
-    expect(session.qrImageUrl).toMatch(/^\/api\/payments\/qr\/.+\.png$/);
-    const img = await app.inject({ method: 'GET', url: session.qrImageUrl });
-    expect(img.statusCode).toBe(200);
-    expect(img.headers['content-type']).toBe('image/png');
-
-    const [s1, s2] = await Promise.all([
-      call('POST', `/api/orders/${o.id}/payment/simulate`, token),
-      call('POST', `/api/orders/${o.id}/payment/simulate`, token),
-    ]);
-    expect([s1.status, s2.status]).toEqual([200, 200]);
-    const detail = (await call('GET', `/api/orders/${o.id}`, token)).json.order;
-    expect(detail.status).toBe('placed');
-    expect(detail.paymentStatus).toBe('paid');
-    expect(detail.timeline[0]).toMatchObject({ status: 'awaiting_payment', label: 'Paid', done: true });
-    expect(await staffSaw(o.id)).toBe(true);
-    const alerts = (await db.select().from(notifications).where(eq(notifications.orderId, o.id))).filter((n) => n.kind === 'staff_new_order');
-    const staffCount = (await db.select().from(users).where(sql`${users.role} in ('staff','admin')`)).length;
-    expect(alerts).toHaveLength(staffCount); // exactly one alert per staff member, even with double confirmation
-    expect(new Set(alerts.map((a) => a.chatId)).size).toBe(staffCount);
-    // The QR image stops working once paid.
-    expect((await app.inject({ method: 'GET', url: session.qrImageUrl })).statusCode).toBe(404);
+    // Switching to English in Profile changes future messages.
+    const patched = await call('PATCH', '/api/me', done.json.token, { languageCode: 'en' });
+    expect(patched.json.user.languageCode).toBe('en');
+    await call('POST', `/api/admin/orders/${o.id}/status`, adminToken, { status: 'confirmed' });
+    const confirmed = (await db.select().from(notifications).where(eq(notifications.orderId, o.id))).find((n) => n.kind === 'order_confirmed');
+    expect(confirmed?.text).toMatch(/is confirmed/);
   });
 
-  it('lets the customer switch to cash, which sends the order to the shop', async () => {
-    const o = (await order(token, { paymentMethod: 'qr' })).json.order;
-    const r = await call('POST', `/api/orders/${o.id}/payment/cash`, token);
-    expect(r.json.payment.paymentMethod).toBe('cash');
-    expect(r.json.payment.status).toBe('placed');
-    expect(await staffSaw(o.id)).toBe(true);
-  });
-
-  it('cancels unpaid QR orders after the payment window and releases stock', async () => {
-    const { expireUnpaidOrders } = await import('../src/services/payments.js');
-    const before = (await db.select().from(products).where(eq(products.id, ids.apples)))[0].stock;
-    const o = (await order(token, { paymentMethod: 'qr' })).json.order;
-    await db.execute(sql`update payments set expires_at = now() - interval '1 minute' where order_id = ${o.id}`);
-    expect(await expireUnpaidOrders()).toBeGreaterThanOrEqual(1);
-    const detail = (await call('GET', `/api/orders/${o.id}`, token)).json.order;
-    expect(detail.status).toBe('cancelled');
-    expect(detail.cancelReason).toMatch(/not completed in time/);
-    expect((await db.select().from(products).where(eq(products.id, ids.apples)))[0].stock).toBe(before);
-    expect(await staffSaw(o.id)).toBe(false);
-    // A late payment is refused.
-    expect((await call('POST', `/api/orders/${o.id}/payment/simulate`, token)).status).toBe(409);
-  });
-
-  it('staff can confirm a QR payment manually, which releases the order', async () => {
-    const o = (await order(token, { paymentMethod: 'qr' })).json.order;
-    expect((await call('POST', `/api/admin/orders/${o.id}/status`, adminToken, { status: 'confirmed' })).status).toBe(409);
-    const r = await call('POST', `/api/admin/orders/${o.id}/payment`, adminToken, { status: 'paid', note: 'Seen in ABA app' });
-    expect(r.json.order.status).toBe('placed');
-    expect(r.json.order.paymentStatus).toBe('paid');
-  });
-
-  it('reports ABA PayWay as not connected yet', async () => {
-    const loyalty = (await call('GET', '/api/admin/loyalty', adminToken)).json;
-    expect(loyalty.paymentProviders.find((p: any) => p.id === 'aba_payway').configured).toBe(false);
-    const settings = { ...loyalty.settings, qrPaymentMode: 'aba_payway' };
-    delete settings.id;
-    delete settings.updatedAt;
-    const r = await call('PUT', '/api/admin/settings', adminToken, settings);
+  it('accepts cash only', async () => {
+    const token = (await onboard({ id: 9702, first_name: 'Dalin' }, '+85599000333')).token;
+    const r = await order(token, { paymentMethod: 'qr' });
     expect(r.status).toBe(400);
-    expect(r.json.error.message).toMatch(/ABA PayWay is not connected yet/);
   });
 });

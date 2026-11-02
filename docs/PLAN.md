@@ -1,4 +1,4 @@
-# Sunny Market — Telegram Mini App: Product & Technical Plan
+# mart25 — Telegram Mini App: Product & Technical Plan
 
 ## 1. Product summary
 
@@ -15,8 +15,9 @@ but every step stays obvious: big buttons, five tabs, no hidden gestures.
 
 | Topic | Assumption |
 | --- | --- |
-| Currency | USD, stored as integer cents. Currency code is a shop setting. |
-| Payments | **Cash on delivery / at pickup**, or **pay now by QR**. QR orders wait as *Awaiting payment* (stock reserved) and reach the shop only once paid. QR generation is a provider interface: a clearly labelled **simulated** provider for development and an **ABA PayWay placeholder** for the shop's own ABA API. |
+| Shop & language | **mart25**, Cambodia. **Khmer is the default**. Customers choose Khmer or English on their first visit (changeable in Profile). Shop data (products, aisles, rewards, coupons, levels, tagline) has Khmer text plus an optional English version. |
+| Currency | USD, stored as integer cents. KHR is supported as a shop setting. |
+| Payments | **Cash only for now** (on delivery / at pickup). Online/QR payment (e.g. ABA) is a later phase. A complete QR flow with an ABA PayWay placeholder is preserved in git history (commit `4c24b89`). |
 | Points model | Points are **cumulative (not spent)**. Crossing a milestone threshold unlocks a reward the customer redeems at checkout. A spendable "points shop" is a phase-2 idea. |
 | Earn rule | `points = floor(merchandise total after discount ÷ $1 × points-per-dollar × level multiplier)`. Delivery fees earn no points. The amount is fixed when the order is placed (shown to the customer) and **credited only when the order is Delivered/Collected**. |
 | Discounts | At most **one coupon or reward per order**. |
@@ -33,13 +34,13 @@ but every step stays obvious: big buttons, five tabs, no hidden gestures.
 
 ### Customer — first visit (QR)
 1. Scans the QR code (store poster or receipt) → `t.me/<bot>/<app>?startapp=store` opens the Mini App in Telegram.
+1. Chooses **ភាសាខ្មែរ** or **English** (saved on the account).
 2. A branded splash screen shows while the backend **validates Telegram `initData`** (HMAC). The backend reports *new* or *returning*.
 3. *New:* welcome screen → **Get Started**.
 4. Profile step: name pre-filled from Telegram (editable), Telegram photo shown if available, **"Share my Telegram number"** (Telegram contact sheet) or type it in, or skip.
 5. Short privacy notice with an "I agree" checkbox → **Create my membership**. Only now is the customer row created. The signup bonus and welcome coupon are granted once, in one transaction.
 6. Celebration screen: points balance, first milestone ("You're 50 points from Free Delivery"), welcome coupon → **Start Shopping**.
-7. Browse categories, search, add to cart → checkout: **Delivery or Pickup?** (address only for delivery), contact, reward/coupon, **QR or cash**, totals → Place order.
-8. **Cash:** the order goes to the shop immediately. **QR:** a payment screen (QR, amount, reference, countdown, "Open in ABA Mobile"). Once payment is confirmed, the order goes to the shop. If it isn't paid in time, it's auto-cancelled and the stock released.
+7. Browse categories, search, add to cart → checkout: **Delivery or Pickup?** (address only for delivery), contact, reward/coupon, totals → Place order (cash on delivery / at pickup). The order goes to the shop immediately.
 9. Confirmation and tracking timeline. Telegram bot messages on each important status change.
 10. When staff mark the order *Delivered*/*Collected*, points are credited, milestones unlock, and a 🎉 notification is sent.
 
@@ -135,7 +136,7 @@ They can edit their name, phone and addresses any time in Profile.
 | Phase | Scope |
 | --- | --- |
 | **1 — MVP (built now)** | QR entry and onboarding, Telegram auth, profile and addresses, catalog/search/cart, checkout (delivery/pickup, COD), seller order management with alerts, customer tracking, bot notifications (real or simulated), points, levels, milestone rewards, welcome coupon, coupons, dashboard catalog/loyalty/customers/insights, QR generator |
-| 2 — Payments and polish | Connect ABA PayWay (KHQR) behind the existing provider interface, partial refunds, product variants, image CDN, scheduled delivery slots, i18n |
+| 2 — Payments and polish | Online/QR payment with ABA PayWay (KHQR), restoring the QR flow from git history, partial refunds, product variants, image CDN, scheduled delivery slots, i18n |
 | 3 — Engagement | Features from the list below, push campaigns via bot, referral codes |
 | 4 — Operations | Live courier GPS, multi-store, POS/receipt integration (scan receipt QR to earn points for in-store purchases), staff permissions per area |
 

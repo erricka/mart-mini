@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
 import { api, session } from './api';
 import { useCart } from './cart';
+import { parseLang, useLangStore } from './i18n';
 import { inTelegram, launchSource, tg } from './telegram';
 import type { User } from './types';
 
@@ -27,6 +28,7 @@ interface Ctx {
   state: Phase;
   user: User | null;
   setUser(u: User): void;
+  changeLanguage(l: 'km' | 'en'): Promise<void>;
   devLogin(as: 'customer' | 'admin' | 'new'): Promise<void>;
   finishOnboarding(token: string, user: User): void;
   signOut(): void;
@@ -43,6 +45,9 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const ready = useCallback(
     (user: User) => {
       ensureOwner(user.id);
+      // The language saved on the account wins (chosen at first sign-in or in Profile).
+      const saved = parseLang(user.languageCode);
+      if (saved && saved !== useLangStore.getState().lang) useLangStore.getState().setLang(saved);
       setState({ phase: 'ready', user });
     },
     [ensureOwner],
@@ -106,6 +111,13 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     state,
     user: state.phase === 'ready' ? state.user : null,
     setUser: (u) => setState({ phase: 'ready', user: u }),
+    async changeLanguage(l) {
+      useLangStore.getState().setLang(l);
+      if (state.phase === 'ready') {
+        const r = await api<{ user: User }>('/me', { method: 'PATCH', body: { languageCode: l } }).catch(() => null);
+        if (r) setState({ phase: 'ready', user: r.user });
+      }
+    },
     async devLogin(as) {
       const r = await api<AuthResponse>('/auth/dev', { body: { as, source: launchSource() }, token: null });
       handleAuth(r, 'browser');

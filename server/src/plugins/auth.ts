@@ -3,6 +3,7 @@ import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { db } from '../db/client.js';
 import { users, type User } from '../db/schema.js';
 import { forbidden, unauthorized } from '../lib/errors.js';
+import { tr } from '../lib/i18n.js';
 import type { OnboardingIdentity } from '../services/identity.js';
 
 export interface SessionClaims {
@@ -42,11 +43,11 @@ function bearer(req: FastifyRequest) {
 
 function verify(app: FastifyInstance, req: FastifyRequest): Claims {
   const token = bearer(req);
-  if (!token) throw unauthorized('Please sign in.');
+  if (!token) throw unauthorized(tr('err.please_sign_in'));
   try {
     return app.jwt.verify<Claims>(token);
   } catch {
-    throw unauthorized('Your session has expired. Please reopen the app.');
+    throw unauthorized(tr('err.session_expired'));
   }
 }
 
@@ -54,22 +55,22 @@ export function makeGuards(app: FastifyInstance) {
   /** Any signed-in account. Role is re-read from the database on every request. */
   const customer = async (req: FastifyRequest) => {
     const claims = verify(app, req);
-    if (claims.typ !== 'session') throw unauthorized('Please finish creating your account first.');
+    if (claims.typ !== 'session') throw unauthorized(tr('err.finish_onboarding'));
     const [u] = await db.select().from(users).where(eq(users.id, claims.uid));
-    if (!u || u.isBlocked) throw unauthorized('Your account is not available.');
+    if (!u || u.isBlocked) throw unauthorized(tr('err.account_unavailable'));
     req.account = u;
   };
   const staff = async (req: FastifyRequest) => {
     await customer(req);
-    if (req.account!.role !== 'staff' && req.account!.role !== 'admin') throw forbidden('Shop staff only.');
+    if (req.account!.role !== 'staff' && req.account!.role !== 'admin') throw forbidden(tr('err.staff_only'));
   };
   const admin = async (req: FastifyRequest) => {
     await customer(req);
-    if (req.account!.role !== 'admin') throw forbidden('Only shop admins can change this.');
+    if (req.account!.role !== 'admin') throw forbidden(tr('err.admin_only'));
   };
   const onboarding = async (req: FastifyRequest) => {
     const claims = verify(app, req);
-    if (claims.typ !== 'onboarding') throw unauthorized('Onboarding session expired. Please reopen the app.');
+    if (claims.typ !== 'onboarding') throw unauthorized(tr('err.onboarding_expired'));
     req.onboarding = claims.tg;
   };
   return { customer, staff, admin, onboarding };

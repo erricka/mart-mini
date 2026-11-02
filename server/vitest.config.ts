@@ -16,6 +16,7 @@ export default defineConfig({
       DEV_LOGIN_ENABLED: 'false',
       ADMIN_TELEGRAM_IDS: '999000001',
       LOG_LEVEL: 'silent',
+      DEFAULT_LANGUAGE: 'en',
     },
   },
 });

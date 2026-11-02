@@ -10,6 +10,7 @@ import fastifyStatic from '@fastify/static';
 import Fastify, { type FastifyError } from 'fastify';
 import { config } from './config.js';
 import { AppError, isCheckViolation } from './lib/errors.js';
+import { parseLang, runWithLang, tr } from './lib/i18n.js';
 import { adminCatalogRoutes } from './routes/admin/catalog.js';
 import { adminCustomerRoutes } from './routes/admin/customers.js';
 import { adminInsightRoutes } from './routes/admin/insights.js';
@@ -17,7 +18,6 @@ import { adminLoyaltyRoutes } from './routes/admin/loyalty.js';
 import { adminOrderRoutes } from './routes/admin/orders.js';
 import { customerRoutes } from './routes/customer.js';
 import { publicRoutes } from './routes/public.js';
-import { paymentRoutes } from './routes/payments.js';
 import { telegramRoutes } from './routes/telegram.js';
 
 const webDist = resolve(dirname(fileURLToPath(import.meta.url)), '../../web/dist');
@@ -58,23 +58,27 @@ export async function buildApp() {
   await app.register(multipart, { limits: { fileSize: config.MAX_UPLOAD_MB * 1024 * 1024, files: 1 } });
   app.decorateRequest('account', null);
   app.decorateRequest('onboarding', null);
+  // Every request runs in the language the app asked for (x-lang: km | en).
+  app.addHook('onRequest', (req, _reply, done) => {
+    runWithLang(parseLang(req.headers['x-lang']) ?? config.DEFAULT_LANGUAGE, done);
+  });
 
   app.setErrorHandler((err: FastifyError | AppError, req, reply) => {
     if (err instanceof AppError) {
       return reply.status(err.statusCode).send({ error: { code: err.code, message: err.message, details: err.details } });
     }
     if (isCheckViolation(err, 'products_stock_non_negative')) {
-      return reply.status(409).send({ error: { code: 'out_of_stock', message: 'Sorry, an item just sold out. Please review your cart.' } });
+      return reply.status(409).send({ error: { code: 'out_of_stock', message: tr('err.out_of_stock') } });
     }
     const status = (err as FastifyError).statusCode ?? 500;
     if (status === 429) {
-      return reply.status(429).send({ error: { code: 'rate_limited', message: 'Too many requests — please wait a moment and try again.' } });
+      return reply.status(429).send({ error: { code: 'rate_limited', message: tr('err.rate_limited') } });
     }
     if (status < 500) {
       return reply.status(status).send({ error: { code: (err as FastifyError).code ?? 'bad_request', message: err.message } });
     }
     req.log.error(err);
-    return reply.status(500).send({ error: { code: 'internal', message: 'Something went wrong on our side. Please try again.' } });
+    return reply.status(500).send({ error: { code: 'internal', message: tr('err.internal') } });
   });
 
   app.get('/api/health', async () => ({ ok: true, time: new Date().toISOString() }));
@@ -83,7 +87,6 @@ export async function buildApp() {
     async (api) => {
       await api.register(publicRoutes);
       await api.register(telegramRoutes);
-      await api.register(paymentRoutes);
       await api.register(customerRoutes);
       await api.register(
         async (admin) => {
@@ -122,7 +125,7 @@ export async function buildApp() {
 
   app.setNotFoundHandler((req, reply) => {
     if (req.url.startsWith('/api/') || !hasWeb || req.method !== 'GET') {
-      return reply.status(404).send({ error: { code: 'not_found', message: 'Not found.' } });
+      return reply.status(404).send({ error: { code: 'not_found', message: tr('err.not_found') } });
     }
     // SPA fallback: client-side routes like /orders/12 or /admin/products.
     return reply.header('cache-control', 'no-cache').sendFile('index.html', webDist);
