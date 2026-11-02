@@ -11,7 +11,11 @@ if (config.SEED_ON_START === 'starter') await seedStarter();
 
 const app = await buildApp();
 const stopWorker = startNotificationWorker(app.log);
-const stopBot = await configureBot(app.log);
+// Bot setup talks to Telegram; a problem there must never stop the shop from starting.
+const stopBot = await configureBot(app.log).catch((err) => {
+  app.log.error({ err }, 'Telegram bot setup failed — the shop is running, the bot chat may not respond');
+  return () => {};
+});
 void dispatchPending();
 
 await app.listen({ port: config.PORT, host: config.HOST });

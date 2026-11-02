@@ -110,17 +110,22 @@ export async function configureBot(log: FastifyBaseLogger) {
   }
 
   if (config.TELEGRAM_BOT_MODE === 'webhook') {
-    if (!config.publicUrlIsHttps || !config.TELEGRAM_WEBHOOK_SECRET) {
+    if (!config.publicUrlIsHttps || !config.webhookSecret) {
       log.error('Webhook mode needs an https PUBLIC_URL and TELEGRAM_WEBHOOK_SECRET.');
       return () => {};
     }
-    await tgCall('setWebhook', {
-      url: new URL('/api/telegram/webhook', config.PUBLIC_URL).toString(),
-      secret_token: config.TELEGRAM_WEBHOOK_SECRET,
-      allowed_updates: ['message'],
-      drop_pending_updates: false,
-    });
-    log.info('Telegram webhook registered');
+    try {
+      await tgCall('setWebhook', {
+        url: new URL('/api/telegram/webhook', config.PUBLIC_URL).toString(),
+        secret_token: config.webhookSecret,
+        allowed_updates: ['message'],
+        drop_pending_updates: false,
+      });
+      log.info('Telegram webhook registered');
+    } catch (err) {
+      // Keep the shop running; only the bot chat (/start, /dashboard) is affected.
+      log.error({ err }, 'Could not register the Telegram webhook — the Mini App still works, bot commands will not. Check TELEGRAM_BOT_TOKEN and PUBLIC_URL.');
+    }
     return () => {};
   }
 

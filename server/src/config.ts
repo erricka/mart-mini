@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { resolve } from 'node:path';
 import dotenv from 'dotenv';
 import { z } from 'zod';
@@ -72,6 +73,16 @@ if (!parsed.success) {
 
 const env = parsed.data;
 
+/**
+ * Telegram only accepts A-Z a-z 0-9 _ - (1–256 chars) as a webhook secret_token. Generated secrets
+ * (e.g. Render's generateValue) can contain + / =, so anything else is turned into its SHA-256 hex,
+ * which is valid and still secret. The same value is used for setWebhook and for checking the header.
+ */
+export function telegramSafeSecret(secret: string): string {
+  if (!secret) return '';
+  return /^[A-Za-z0-9_-]{1,256}$/.test(secret) ? secret : createHash('sha256').update(secret).digest('hex');
+}
+
 export const config = {
   ...env,
   isProd: env.NODE_ENV === 'production',
@@ -80,6 +91,7 @@ export const config = {
   telegramConfigured: env.TELEGRAM_BOT_TOKEN.length > 0,
   simulateNotifications: env.NOTIFICATIONS_MODE === 'simulate' || env.TELEGRAM_BOT_TOKEN.length === 0,
   publicUrlIsHttps: env.PUBLIC_URL.startsWith('https://'),
+  webhookSecret: telegramSafeSecret(env.TELEGRAM_WEBHOOK_SECRET),
   uploadDir: resolve(process.cwd(), env.UPLOAD_DIR),
 };
 

@@ -56,3 +56,14 @@ describe('requestContact response validation', () => {
     expect(() => validateContactResponse(contact(7), TOKEN, 42)).toThrow('different Telegram user');
   });
 });
+
+describe('Telegram webhook secret', async () => {
+  const { telegramSafeSecret } = await import('../src/config.js');
+  it('keeps secrets Telegram accepts and hashes ones it would reject (e.g. Render-generated base64)', () => {
+    expect(telegramSafeSecret('abc_DEF-123')).toBe('abc_DEF-123');
+    const fixed = telegramSafeSecret('k3+/xYz9Q==');
+    expect(fixed).toMatch(/^[a-f0-9]{64}$/);
+    expect(telegramSafeSecret('k3+/xYz9Q==')).toBe(fixed); // stable across restarts
+    expect(telegramSafeSecret('')).toBe('');
+  });
+});
