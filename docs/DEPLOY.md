@@ -10,14 +10,44 @@ About 30–45 minutes, no server administration needed. You'll do four things:
 You need:
 
 - a Telegram account (two accounts or a friend's phone help for testing)
-- this code on GitHub
-- a [Render](https://render.com) account (paid "Starter" plans, about US$15/month total; check Render's pricing page)
+- this code on GitHub: **[github.com/erricka/mart-mini](https://github.com/erricka/mart-mini)**
+- a [Render](https://dashboard.render.com/register) account (sign up with GitHub). Paid "Starter" plans come to about US$15/month total. See [Render pricing](https://render.com/pricing).
+
+## Quick links
+
+Open these in order:
+
+| Step | Link | What to do there |
+| --- | --- | --- |
+| 1 | **[@BotFather](https://t.me/BotFather)** | Send `/newbot` and copy the **token** |
+| 1 | **[@userinfobot](https://t.me/userinfobot)** | Press Start and copy your **ID** |
+| 2 | **[Sign up / log in to Render](https://dashboard.render.com/register)** | Choose *GitHub* to sign in |
+| 2 | **[One-click deploy of mart-mini](https://render.com/deploy?repo=https://github.com/erricka/mart-mini)** | Paste the token, bot username and ID, then click **Apply** |
+| 3 | **[@BotFather](https://t.me/BotFather)** | `/mybots` → your bot → *Bot Settings → Configure Mini App* → paste your Render URL |
+| 4 | `https://t.me/<your_bot>` | Press **Start** → 🛒 ទិញទំនិញ, then send `/dashboard` |
+
+Or click the button:
+
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/erricka/mart-mini)
+
+### Write your values here as you go
+
+Keep the token private. Write it down on paper or in a password manager, not in this file.
+
+| What | Your value |
+| --- | --- |
+| Bot username (without `@`) | `________________bot` |
+| Your Telegram ID (admin) | `______________` |
+| Render URL | `https://____________.onrender.com` |
+| Bot link (open the shop) | `https://t.me/________________bot` |
+| QR / customer link | `https://t.me/________________bot?startapp=store` |
+| Render dashboard (logs, settings) | [dashboard.render.com](https://dashboard.render.com) |
 
 ---
 
 ## 1. Create the Telegram bot
 
-1. In Telegram, open **[@BotFather](https://t.me/BotFather)** and send `/newbot`.
+1. In Telegram, open **[@BotFather](https://t.me/BotFather)** (tap the link on your phone, or search *BotFather* with the blue ✓) and send `/newbot`.
 2. Choose a display name (e.g. *mart25*) and a username ending in `bot` (e.g. `mart25_bot`).
 3. BotFather replies with a **token** like `7123456789:AAH...`. **Keep it secret.** Anyone with it controls your bot.
 4. Find **your own Telegram user ID**: open **[@userinfobot](https://t.me/userinfobot)** and press Start. Note the number after `Id:`. This becomes the shop admin.
@@ -26,8 +56,11 @@ Optional branding in BotFather: `/setuserpic` (logo), `/setdescription` (shown b
 
 ## 2. Deploy to Render
 
-1. Render Dashboard → **New → Blueprint** → connect GitHub → choose the repository.
-   Render reads `render.yaml` and proposes a **web service** (`mart25`) and a **PostgreSQL database**, both in Singapore.
+1. Log in to Render ([dashboard.render.com](https://dashboard.render.com), signing in with GitHub), then open the one-click link:
+   **[render.com/deploy?repo=https://github.com/erricka/mart-mini](https://render.com/deploy?repo=https://github.com/erricka/mart-mini)**
+
+   If you prefer doing it by hand: [Render Blueprints](https://dashboard.render.com/blueprints) → **New Blueprint Instance** → connect GitHub → choose **erricka/mart-mini** (branch `main`).
+   Either way, Render reads [`render.yaml`](../render.yaml) and proposes a **web service** (`mart25`) and a **PostgreSQL database**, both in Singapore. Choose a **Blueprint name**, e.g. *mart25*.
 2. Fill in the values it asks for:
 
    | Key | Value |
@@ -38,8 +71,8 @@ Optional branding in BotFather: `/setuserpic` (logo), `/setdescription` (shown b
 
    Everything else is set automatically: the session secret, webhook secret, database connection, migrations, the public URL, and **starter shop data on first boot**.
 3. Click **Apply**. The first build takes a few minutes.
-4. When it's live, copy the service URL, e.g. `https://mart25.onrender.com`. Opening it in a normal browser shows *"Open in Telegram"*. That's expected: the app only signs people in through Telegram.
-5. Check the service **Logs**. You should see:
+4. When it's live, open the service in the [Render dashboard](https://dashboard.render.com) and copy the URL shown under its name, e.g. `https://mart25.onrender.com`. Opening it in a normal browser shows *"Open in Telegram"*. That's expected: the app only signs people in through Telegram.
+5. Check the service **Logs** (left menu). You should see:
 
    ```
    🌱 First boot: creating the mart25 starter setup …
@@ -52,8 +85,10 @@ Optional branding in BotFather: `/setuserpic` (logo), `/setdescription` (shown b
 
 The server has already set the bot's **menu button** (🛒 ទិញទំនិញ) and commands, in Khmer, with English descriptions for Telegram apps set to English. One step in BotFather enables QR-code links:
 
-1. BotFather → `/mybots` → your bot → **Bot Settings → Configure Mini App → Enable Mini App**.
+1. Open **[@BotFather](https://t.me/BotFather)** → send `/mybots` → your bot → **Bot Settings → Configure Mini App → Enable Mini App**.
 2. Send your Render URL (`https://mart25.onrender.com`).
+
+(Telegram's own reference on Mini Apps: [core.telegram.org/bots/webapps](https://core.telegram.org/bots/webapps).)
 
 You can now open **`https://t.me/<your_bot>?startapp=store`**, which is what the QR codes point to.
 
@@ -63,7 +98,7 @@ You can now open **`https://t.me/<your_bot>?startapp=store`**, which is what the
 
 **As the admin (your account):**
 
-1. Open your bot → **Start** → tap the **🛒 ទិញទំនិញ** button next to the message box.
+1. Open your bot at `https://t.me/<your_bot>` → **Start** → tap the **🛒 ទិញទំនិញ** button next to the message box.
 2. Because your ID is in `ADMIN_TELEGRAM_IDS`, you go straight in, with no onboarding.
 3. Send **`/dashboard`** to the bot. You get two buttons:
    - **📋 Open dashboard here:** the seller dashboard inside Telegram (works on Telegram Desktop too).
@@ -146,10 +181,10 @@ You can now open **`https://t.me/<your_bot>?startapp=store`**, which is what the
 
 ## Day-to-day
 
-- **Updates:** push to GitHub and Render redeploys automatically. Database migrations run on boot.
+- **Updates:** push to `main` on [GitHub](https://github.com/erricka/mart-mini) and Render redeploys automatically. Database migrations run on boot. You can follow it under the service's **Events** in the [Render dashboard](https://dashboard.render.com).
 - **Photos:** stored on the attached Render disk (`server/uploads`), so they survive deploys.
 - **Backups:** check the backup options of your Render Postgres plan, and test a restore once.
-- **Custom domain (optional):** Render → service → Settings → Custom Domains. Then set `PUBLIC_URL=https://shop.yourdomain.com` and update the Mini App URL in BotFather.
+- **Custom domain (optional):** Render → service → Settings → Custom Domains ([guide](https://render.com/docs/custom-domains)). Then set `PUBLIC_URL=https://shop.yourdomain.com` and update the Mini App URL in [@BotFather](https://t.me/BotFather).
 
 ## Troubleshooting
 
@@ -159,7 +194,8 @@ You can now open **`https://t.me/<your_bot>?startapp=store`**, which is what the
 | Bot doesn't answer `/start` or `/dashboard` | Check the logs for *Telegram webhook registered*. Open `https://api.telegram.org/bot<TOKEN>/getWebhookInfo` in a browser: `url` should be your Render URL and `last_error_message` empty. |
 | No 🛒 Shop button | Close and reopen the chat. It's set on boot when the URL is https. You can also set it in BotFather → `/setmenubutton`. |
 | Customers don't get order messages | They must allow messages. The app asks during onboarding and after an order (“Get order updates in Telegram”). Customers who pressed Start in the bot chat always receive them. |
-| `/dashboard` says *staff only* | Add your user ID to `ADMIN_TELEGRAM_IDS`, or have an admin set your role to Staff. |
+| `/dashboard` says *staff only* | Add your user ID (from [@userinfobot](https://t.me/userinfobot)) to `ADMIN_TELEGRAM_IDS` in Render → service → **Environment**, or have an admin set your role to Staff. |
+| Need help with Render itself | [Render docs: Blueprints](https://render.com/docs/infrastructure-as-code) · [Render status](https://status.render.com) |
 | First load is slow | You're on a free instance that sleeps. Use the paid Starter plan in production. |
 
 ## Alternative: your own server (VPS)
@@ -167,7 +203,7 @@ You can now open **`https://t.me/<your_bot>?startapp=store`**, which is what the
 On any Linux VPS with Docker (e.g. a Singapore region):
 
 ```bash
-git clone <your repo> && cd <repo>
+git clone https://github.com/erricka/mart-mini.git && cd mart-mini
 cp .env.example .env
 # edit .env: NODE_ENV=production, SESSION_SECRET, PUBLIC_URL=https://your-domain,
 # TELEGRAM_* values, TELEGRAM_BOT_MODE=webhook, TELEGRAM_WEBHOOK_SECRET, ADMIN_TELEGRAM_IDS, SEED_ON_START=starter

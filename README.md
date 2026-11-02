@@ -7,7 +7,9 @@ A Telegram Mini App for the **mart25** supermarket. It has three parts:
 - **Seller dashboard:** live orders, catalog and stock, loyalty setup, customers, insights and printable bilingual QR posters.
 
 > Product summary, journeys, architecture, database design and roadmap: **[docs/PLAN.md](docs/PLAN.md)**.
-> Going live step by step: **[docs/DEPLOY.md](docs/DEPLOY.md)**.
+> Going live step by step, with all the links: **[docs/DEPLOY.md](docs/DEPLOY.md)**.
+>
+> [![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/erricka/mart-mini)
 
 | First visit (Khmer) | Shop → basket → checkout → order |
 | --- | --- |
@@ -110,9 +112,9 @@ There are 36 tests: unit tests for Telegram signatures and pricing, plus API int
 
 See **[docs/DEPLOY.md](docs/DEPLOY.md)**. In short:
 
-1. Create a bot with @BotFather.
-2. Deploy with `render.yaml` (Render Blueprint, Singapore).
-3. Enable the Mini App in BotFather with your Render URL.
+1. Create a bot with [@BotFather](https://t.me/BotFather) and get your ID from [@userinfobot](https://t.me/userinfobot).
+2. Deploy with `render.yaml`: [one-click Render deploy](https://render.com/deploy?repo=https://github.com/erricka/mart-mini) (Blueprint, Singapore).
+3. Enable the Mini App in [@BotFather](https://t.me/BotFather) with your Render URL.
 4. Open the bot and tap **🛒 ទិញទំនិញ**. Staff send `/dashboard`.
 
 Telegram notifications are real when `TELEGRAM_BOT_TOKEN` is set. Without it they're clearly marked **SIMULATED** (logged and shown on each order).
