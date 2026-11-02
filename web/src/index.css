@@ -1,0 +1,95 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+:root {
+  --bg: #f5f7f2;
+  --surface: #ffffff;
+  --surface-2: #eef3ea;
+  --ink: #12201a;
+  --muted: #5f6f68;
+  --line: #e2e8e0;
+  --brand: #16a34a;
+  --brand-ink: #ffffff;
+  --sun: #f59e0b;
+  color-scheme: light;
+}
+.dark {
+  --bg: #0e1411;
+  --surface: #17201b;
+  --surface-2: #1f2a24;
+  --ink: #ecf3ee;
+  --muted: #9aaba3;
+  --line: #2a3731;
+  --brand: #22c55e;
+  --brand-ink: #062b14;
+  color-scheme: dark;
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-ink: var(--ink);
+  --color-muted: var(--muted);
+  --color-line: var(--line);
+  --color-brand: var(--brand);
+  --color-brand-ink: var(--brand-ink);
+  --color-sun: var(--sun);
+  --font-sans: ui-rounded, "SF Pro Rounded", system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+
+html, body, #root { min-height: 100%; }
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  -webkit-tap-highlight-color: transparent;
+  -webkit-font-smoothing: antialiased;
+  overscroll-behavior-y: none;
+}
+input, textarea, select, button { font: inherit; }
+button { cursor: pointer; }
+button:disabled { cursor: not-allowed; }
+:focus-visible { outline: 3px solid color-mix(in srgb, var(--brand) 55%, transparent); outline-offset: 2px; border-radius: 12px; }
+
+.pb-safe { padding-bottom: max(env(safe-area-inset-bottom), 0px); }
+.no-scrollbar::-webkit-scrollbar { display: none; }
+.no-scrollbar { scrollbar-width: none; }
+
+@keyframes pop { 0% { transform: scale(1); } 40% { transform: scale(1.35); } 100% { transform: scale(1); } }
+@keyframes float { 0%, 100% { transform: translateY(0) rotate(-3deg); } 50% { transform: translateY(-10px) rotate(3deg); } }
+@keyframes wiggle { 0%, 100% { transform: rotate(0); } 25% { transform: rotate(-10deg); } 75% { transform: rotate(10deg); } }
+@keyframes shimmer { 0% { background-position: -400px 0; } 100% { background-position: 400px 0; } }
+@keyframes rise { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: none; } }
+@keyframes pulse-ring { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--sun) 60%, transparent); } 100% { box-shadow: 0 0 0 14px transparent; } }
+@keyframes sheet-up { from { transform: translateY(100%); } to { transform: none; } }
+@keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
+
+.animate-pop { animation: pop .35s ease-out; }
+.animate-float { animation: float 3.5s ease-in-out infinite; }
+.animate-wiggle { animation: wiggle .9s ease-in-out infinite; }
+.animate-rise { animation: rise .4s ease-out both; }
+.animate-pulse-ring { animation: pulse-ring 1.6s ease-out infinite; }
+.animate-sheet { animation: sheet-up .28s cubic-bezier(.2,.9,.3,1); }
+.animate-fade { animation: fade-in .2s ease-out; }
+.skeleton {
+  background: linear-gradient(90deg, var(--surface-2) 0px, color-mix(in srgb, var(--surface-2) 40%, var(--surface)) 80px, var(--surface-2) 160px);
+  background-size: 800px 100%;
+  animation: shimmer 1.3s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
+}
+
+@media print {
+  body { background: #fff; }
+  .no-print { display: none !important; }
+  .print-only { display: block !important; }
+}
+.print-only { display: none; }
+
+/* Chart palette (validated with the dataviz validator against the app surfaces, light + dark). */
+:root { --viz-1: #2a78d6; --viz-2: #eb6834; --viz-grid: #e8ece6; }
+.dark { --viz-1: #3987e5; --viz-2: #d95926; --viz-grid: #26322c; }

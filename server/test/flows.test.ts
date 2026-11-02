@@ -1,0 +1,409 @@
+/**
+ * End-to-end API tests against a real PostgreSQL database (TEST_DATABASE_URL, default market_test).
+ * Covers onboarding, idempotent checkout, concurrent stock, reward redemption, points award/reversal,
+ * cancellation and access control.
+ */
+import { randomUUID } from 'node:crypto';
+import { eq, sql } from 'drizzle-orm';
+import type { FastifyInstance } from 'fastify';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { buildApp } from '../src/app.js';
+import { db, pool } from '../src/db/client.js';
+import { runMigrations } from '../src/db/migrate.js';
+import {
+  categories,
+  couponRedemptions,
+  coupons,
+  customerRewards,
+  levels,
+  notifications,
+  orders,
+  pointsTransactions,
+  products,
+  rewards,
+  shopSettings,
+  users,
+} from '../src/db/schema.js';
+import { signQuery, type TelegramUser } from '../src/lib/telegram-auth.js';
+import { setAutoDispatch } from '../src/services/notifications.js';
+
+const TOKEN = process.env.TELEGRAM_BOT_TOKEN!;
+let app: FastifyInstance;
+let ids: { apples: number; limited: number; chocolate: number; welcomeCoupon: number; fresh5: number };
+
+function initData(user: TelegramUser, startParam?: string) {
+  const fields: Record<string, string> = { query_id: 'AAE', user: JSON.stringify(user), auth_date: String(Math.floor(Date.now() / 1000)) };
+  if (startParam) fields.start_param = startParam;
+  return signQuery(fields, TOKEN);
+}
+
+const call = async (method: 'GET' | 'POST' | 'PUT', url: string, token?: string, body?: unknown) => {
+  const res = await app.inject({ method, url, headers: token ? { authorization: `Bearer ${token}` } : {}, payload: body as object });
+  return { status: res.statusCode, json: res.json() as any };
+};
+
+async function onboard(tg: TelegramUser, phone?: string) {
+  const auth = await call('POST', '/api/auth/telegram', undefined, { initData: initData(tg, 'store') });
+  expect(auth.json.status).toBe('new');
+  const done = await call('POST', '/api/onboarding/complete', auth.json.onboardingToken, { firstName: tg.first_name, phone, acceptPrivacy: true });
+  expect(done.status).toBe(200);
+  return done.json as { token: string; user: { id: number }; welcome: any };
+}
+
+const order = (token: string, over: Record<string, unknown> = {}) =>
+  call('POST', '/api/orders', token, {
+    items: [{ productId: ids.apples, quantity: 2 }],
+    fulfillmentType: 'pickup',
+    paymentMethod: 'cash',
+    contactName: 'Test',
+    contactPhone: '+1 555 000 1111',
+    idempotencyKey: randomUUID(),
+    ...over,
+  });
+
+let adminToken: string;
+
+beforeAll(async () => {
+  setAutoDispatch(false);
+  await pool.query('DROP SCHEMA IF EXISTS public CASCADE; CREATE SCHEMA public; DROP SCHEMA IF EXISTS drizzle CASCADE;');
+  await runMigrations();
+
+  const [welcome] = await db.insert(coupons).values({ title: 'Welcome 10%', discountType: 'percent', value: 10, perCustomerLimit: null }).returning();
+  const [fresh5] = await db
+    .insert(coupons)
+    .values({ code: 'FRESH5', title: '$5 off', discountType: 'fixed', value: 500, minSubtotalCents: 1000, perCustomerLimit: 1, isPublic: true })
+    .returning();
+  await db.insert(shopSettings).values({ id: 1, deliveryFeeCents: 299, freeDeliveryMinCents: 3500, minOrderCents: 0, signupBonusPoints: 50, pointsPerDollar: 1, welcomeCouponId: welcome.id, pickupAddress: 'Desk' });
+  await db.insert(levels).values({ name: 'Sprout', emoji: '🌱', minPoints: 0, multiplierPercent: 100 });
+  const [cat] = await db.insert(categories).values({ name: 'Fresh Produce', slug: 'fresh-produce' }).returning();
+  const [apples] = await db.insert(products).values({ categoryId: cat.id, name: 'Apples', priceCents: 500, stock: 100 }).returning();
+  const [limited] = await db.insert(products).values({ categoryId: cat.id, name: 'Truffle Oil', priceCents: 200, stock: 3 }).returning();
+  const [chocolate] = await db.insert(products).values({ categoryId: cat.id, name: 'Chocolate', priceCents: 279, stock: 10 }).returning();
+  const [fd] = await db.insert(coupons).values({ title: 'Free delivery', discountType: 'free_delivery', perCustomerLimit: null }).returning();
+  await db.insert(rewards).values({ title: 'Free delivery', pointsRequired: 100, couponId: fd.id, emoji: '🚚' });
+  ids = { apples: apples.id, limited: limited.id, chocolate: chocolate.id, welcomeCoupon: welcome.id, fresh5: fresh5.id };
+
+  app = await buildApp();
+  // ADMIN_TELEGRAM_IDS=999000001 in vitest.config.ts → this login creates an admin directly.
+  const admin = await call('POST', '/api/auth/telegram', undefined, { initData: initData({ id: 999000001, first_name: 'Owner' }) });
+  expect(admin.json.status).toBe('existing');
+  expect(admin.json.user.role).toBe('admin');
+  adminToken = admin.json.token;
+});
+
+afterAll(async () => {
+  await app.close();
+  await pool.end();
+});
+
+describe('Telegram login & onboarding', () => {
+  it('rejects forged initData', async () => {
+    const forged = signQuery({ user: JSON.stringify({ id: 1, first_name: 'X' }), auth_date: String(Math.floor(Date.now() / 1000)) }, '1:WRONG');
+    const r = await call('POST', '/api/auth/telegram', undefined, { initData: forged });
+    expect(r.status).toBe(401);
+  });
+
+  it('creates the account only after privacy is accepted, grants welcome rewards once, and recognises returning customers', async () => {
+    const tg = { id: 5001, first_name: 'Nora', photo_url: 'https://t.me/i/userpic/320/nora.jpg' };
+    const first = await call('POST', '/api/auth/telegram', undefined, { initData: initData(tg, 'receipt') });
+    expect(first.json.status).toBe('new');
+    expect(first.json.prefill.firstName).toBe('Nora');
+    expect(await db.select().from(users).where(eq(users.telegramId, 5001))).toHaveLength(0);
+
+    // Onboarding token can't be used as a session.
+    expect((await call('GET', '/api/me', first.json.onboardingToken)).status).toBe(401);
+    // Privacy must be accepted.
+    const noConsent = await call('POST', '/api/onboarding/complete', first.json.onboardingToken, { firstName: 'Nora', acceptPrivacy: false });
+    expect(noConsent.status).toBe(400);
+
+    const body = { firstName: 'Nora', phone: '+44 7700 900123', acceptPrivacy: true };
+    const [a, b] = await Promise.all([
+      call('POST', '/api/onboarding/complete', first.json.onboardingToken, body),
+      call('POST', '/api/onboarding/complete', first.json.onboardingToken, body),
+    ]);
+    expect([a.json.status, b.json.status].sort()).toEqual(['created', 'existing']);
+    const created = a.json.status === 'created' ? a.json : b.json;
+    expect(created.welcome.pointsAwarded).toBe(50);
+    expect(created.welcome.welcomeCoupon.title).toBe('Welcome 10%');
+    expect(created.loyalty.progress.remaining).toBe(50);
+
+    const [u] = await db.select().from(users).where(eq(users.telegramId, 5001));
+    expect(u.pointsBalance).toBe(50);
+    expect(u.signupSource).toBe('receipt');
+    expect(u.phoneVerified).toBe(false);
+    expect(await db.select().from(pointsTransactions).where(eq(pointsTransactions.userId, u.id))).toHaveLength(1);
+    expect(await db.select().from(customerRewards).where(eq(customerRewards.userId, u.id))).toHaveLength(1);
+
+    const again = await call('POST', '/api/auth/telegram', undefined, { initData: initData(tg) });
+    expect(again.json.status).toBe('existing');
+    expect(again.json.user.firstName).toBe('Nora');
+  });
+
+  it('does not repeat the welcome gift for a second account with the same phone number', async () => {
+    const r = await onboard({ id: 5002, first_name: 'Nora2' }, '+447700900123');
+    expect(r.welcome.pointsAwarded).toBe(0);
+    expect(r.welcome.skippedReason).toBe('phone_already_used');
+  });
+
+  it('verifies phone numbers shared through Telegram requestContact', async () => {
+    const tg = { id: 5003, first_name: 'Omar' };
+    const auth = await call('POST', '/api/auth/telegram', undefined, { initData: initData(tg) });
+    const contactResponse = signQuery(
+      { contact: JSON.stringify({ user_id: 5003, phone_number: '15550009999', first_name: 'Omar' }), auth_date: String(Math.floor(Date.now() / 1000)) },
+      TOKEN,
+    );
+    const done = await call('POST', '/api/onboarding/complete', auth.json.onboardingToken, { firstName: 'Omar', contactResponse, acceptPrivacy: true });
+    expect(done.json.user.phone).toBe('+15550009999');
+    expect(done.json.user.phoneVerified).toBe(true);
+  });
+});
+
+describe('Checkout', () => {
+  let token: string;
+  beforeAll(async () => {
+    token = (await onboard({ id: 6001, first_name: 'Pia' }, '+15550006001')).token;
+  });
+
+  it('quotes server-side prices, fees and points', async () => {
+    const r = await call('POST', '/api/checkout/quote', token, { items: [{ productId: ids.apples, quantity: 3 }], fulfillmentType: 'delivery' });
+    expect(r.json.quote.subtotalCents).toBe(1500);
+    expect(r.json.quote.baseDeliveryFeeCents).toBe(299);
+    expect(r.json.quote.totalCents).toBe(1799);
+    expect(r.json.quote.pointsEstimate).toBe(15);
+    expect(r.json.discounts.wallet).toHaveLength(1);
+    expect(r.json.discounts.publicCoupons.map((c: any) => c.code)).toEqual(['FRESH5']);
+  });
+
+  it('requires an address only for delivery', async () => {
+    const r = await order(token, { fulfillmentType: 'delivery' });
+    expect(r.status).toBe(400);
+    expect(r.json.error.code).toBe('address_required');
+    const ok = await order(token, { fulfillmentType: 'delivery', address: { line1: '1 Test Road', city: 'Springfield' } });
+    expect(ok.status).toBe(201);
+    expect(ok.json.order.address.line1).toBe('1 Test Road');
+    expect(ok.json.order.totalCents).toBe(1299);
+  });
+
+  it('treats repeated submissions with the same idempotency key as one order', async () => {
+    const key = randomUUID();
+    const before = (await db.select().from(products).where(eq(products.id, ids.apples)))[0].stock;
+    const results = await Promise.all([order(token, { idempotencyKey: key }), order(token, { idempotencyKey: key }), order(token, { idempotencyKey: key })]);
+    const orderIds = new Set(results.map((r) => r.json.order.id));
+    expect(orderIds.size).toBe(1);
+    expect(results.filter((r) => r.json.replayed === false)).toHaveLength(1);
+    const after = (await db.select().from(products).where(eq(products.id, ids.apples)))[0].stock;
+    expect(before - after).toBe(2);
+  });
+
+  it('never oversells under simultaneous purchases', async () => {
+    const shoppers = await Promise.all([1, 2, 3, 4, 5, 6].map((i) => onboard({ id: 7000 + i, first_name: `Shopper${i}` }, `+1555007000${i}`)));
+    const results = await Promise.all(shoppers.map((s) => order(s.token, { items: [{ productId: ids.limited, quantity: 1 }] })));
+    expect(results.filter((r) => r.status === 201)).toHaveLength(3);
+    expect(results.filter((r) => r.status === 409).every((r) => /stock/i.test(r.json.error.message))).toBe(true);
+    const [p] = await db.select().from(products).where(eq(products.id, ids.limited));
+    expect(p.stock).toBe(0);
+  });
+
+  it('lets a wallet reward be redeemed only once, even with concurrent checkouts', async () => {
+    const wallet = (await call('POST', '/api/checkout/quote', token, { items: [], fulfillmentType: 'pickup' })).json.discounts.wallet;
+    const rewardId = wallet[0].id;
+    const results = await Promise.all([order(token, { customerRewardId: rewardId }), order(token, { customerRewardId: rewardId })]);
+    expect(results.map((r) => r.status).sort()).toEqual([201, 409]);
+    const used = results.find((r) => r.status === 201)!.json.order;
+    expect(used.discountCents).toBe(100); // 10% of $10
+    expect(used.discountLabel).toBe('Welcome 10%');
+  });
+
+  it('enforces per-customer coupon limits', async () => {
+    expect((await order(token, { couponCode: 'fresh5' })).status).toBe(201);
+    const second = await order(token, { couponCode: 'FRESH5' });
+    expect(second.status).toBe(409);
+    expect(second.json.error.message).toMatch(/already used/);
+  });
+});
+
+describe('Order lifecycle, points and refunds', () => {
+  let token: string;
+  let userId: number;
+  beforeAll(async () => {
+    const r = await onboard({ id: 8001, first_name: 'Quinn' }, '+15550008001');
+    token = r.token;
+    userId = r.user.id;
+  });
+
+  const status = (id: number, s: string, tok = adminToken) => call('POST', `/api/admin/orders/${id}/status`, tok, { status: s });
+  const payment = (id: number, s: string) => call('POST', `/api/admin/orders/${id}/payment`, adminToken, { status: s });
+  const balance = async () => (await db.select().from(users).where(eq(users.id, userId)))[0].pointsBalance;
+
+  it('awards points only on completion, exactly once, and unlocks milestones', async () => {
+    const placed = (await order(token, { items: [{ productId: ids.apples, quantity: 12 }] })).json.order; // $60 → 60 pts
+    expect(placed.pointsEstimate).toBe(60);
+    for (const s of ['confirmed', 'preparing', 'ready_for_pickup']) expect((await status(placed.id, s)).status).toBe(200);
+    expect(await balance()).toBe(50);
+
+    const [c1, c2] = await Promise.all([status(placed.id, 'collected'), status(placed.id, 'collected')]);
+    expect([c1.status, c2.status]).toEqual([200, 200]);
+    expect(await balance()).toBe(110);
+    expect((await status(placed.id, 'collected')).json.changed).toBe(false);
+    expect(await balance()).toBe(110);
+
+    const rewardsPage = (await call('GET', '/api/rewards', token)).json;
+    expect(rewardsPage.milestones[0].reached).toBe(true);
+    expect(rewardsPage.wallet.some((w: any) => w.title === 'Free delivery' && w.status === 'available')).toBe(true);
+    const sent = await db.select().from(notifications).where(eq(notifications.chatId, 8001));
+    expect(sent.map((n) => n.kind)).toEqual(expect.arrayContaining(['order_placed', 'order_confirmed', 'order_collected', 'reward_unlocked']));
+  });
+
+  it('reverses points once on refund and revokes milestone rewards that are no longer earned', async () => {
+    const [o] = await db.select().from(orders).where(eq(orders.userId, userId));
+    expect((await payment(o.id, 'paid')).status).toBe(200);
+    const [r1, r2] = await Promise.all([payment(o.id, 'refunded'), payment(o.id, 'refunded')]);
+    expect([r1.status, r2.status]).toEqual([200, 200]);
+    expect(await balance()).toBe(50);
+    const ledger = await db.select().from(pointsTransactions).where(eq(pointsTransactions.orderId, o.id));
+    expect(ledger.map((l) => l.delta).sort()).toEqual([-60, 60]);
+    const wallet = (await call('GET', '/api/rewards', token)).json.wallet;
+    expect(wallet.find((w: any) => w.title === 'Free delivery').status).toBe('revoked');
+    expect((await payment(o.id, 'paid')).status).toBe(409);
+  });
+
+  it('keeps payment separate and refuses invalid fulfilment transitions', async () => {
+    const o = (await order(token)).json.order;
+    const bad = await status(o.id, 'out_for_delivery');
+    expect(bad.status).toBe(409);
+    expect(bad.json.error.details.allowed).toContain('ready_for_pickup');
+    expect((await payment(o.id, 'paid')).json.order.status).toBe('placed');
+  });
+
+  it('lets customers cancel only before confirmation, restoring stock and rewards', async () => {
+    const wallet = (await call('POST', '/api/checkout/quote', token, { items: [], fulfillmentType: 'pickup' })).json.discounts.wallet;
+    const welcome = wallet.find((w: any) => w.source === 'welcome');
+    const stockBefore = (await db.select().from(products).where(eq(products.id, ids.apples)))[0].stock;
+    const o = (await order(token, { customerRewardId: welcome.id, items: [{ productId: ids.apples, quantity: 4 }] })).json.order;
+    expect((await db.select().from(products).where(eq(products.id, ids.apples)))[0].stock).toBe(stockBefore - 4);
+
+    const cancelled = await call('POST', `/api/orders/${o.id}/cancel`, token, { reason: 'Changed my mind' });
+    expect(cancelled.json.order.status).toBe('cancelled');
+    expect((await db.select().from(products).where(eq(products.id, ids.apples)))[0].stock).toBe(stockBefore);
+    const [cr] = await db.select().from(customerRewards).where(eq(customerRewards.id, welcome.id));
+    expect(cr.status).toBe('available');
+    const [red] = await db.select().from(couponRedemptions).where(eq(couponRedemptions.orderId, o.id));
+    expect(red.status).toBe('released');
+    // Completing a cancelled order is impossible.
+    expect((await status(o.id, 'collected')).status).toBe(409);
+
+    const o2 = (await order(token)).json.order;
+    await status(o2.id, 'confirmed');
+    const late = await call('POST', `/api/orders/${o2.id}/cancel`, token, {});
+    expect(late.status).toBe(409);
+  });
+});
+
+describe('Access control', () => {
+  it('keeps customers out of the dashboard and out of other customers’ orders', async () => {
+    const a = await onboard({ id: 9001, first_name: 'Rae' }, '+15550009001');
+    const b = await onboard({ id: 9002, first_name: 'Sol' }, '+15550009002');
+    const o = (await order(a.token)).json.order;
+    expect((await call('GET', `/api/orders/${o.id}`, b.token)).status).toBe(404);
+    expect((await call('GET', '/api/admin/orders', a.token)).status).toBe(403);
+    expect((await call('POST', `/api/admin/orders/${o.id}/status`, a.token, { status: 'confirmed' })).status).toBe(403);
+    expect((await call('GET', '/api/admin/orders')).status).toBe(401);
+  });
+
+  it('lets admins promote staff, and staff cannot change loyalty settings', async () => {
+    const s = await onboard({ id: 9100, first_name: 'Staffer' }, '+15550009100');
+    expect((await call('PUT', `/api/admin/customers/${s.user.id}/role`, adminToken, { role: 'staff' })).status).toBe(200);
+    expect((await call('GET', '/api/admin/orders', s.token)).status).toBe(200);
+    expect((await call('PUT', '/api/admin/levels', s.token, { levels: [{ name: 'X', emoji: '⭐', minPoints: 0, multiplierPercent: 100, color: '#000000' }] })).status).toBe(403);
+  });
+
+  it('never lets stock go negative even if updated directly', async () => {
+    await expect(db.update(products).set({ stock: sql`${products.stock} - 1000` }).where(eq(products.id, ids.chocolate))).rejects.toThrow();
+  });
+});
+
+describe('QR payment: the shop only gets the order after payment', () => {
+  let token: string;
+  beforeAll(async () => {
+    token = (await onboard({ id: 9500, first_name: 'Vanna' }, '+85512000111')).token;
+  });
+
+  const staffSaw = async (orderId: number) =>
+    (await db.select().from(notifications).where(eq(notifications.orderId, orderId))).some((n) => n.kind === 'staff_new_order');
+
+  it('holds QR orders as awaiting payment, then hands them to the shop once paid', async () => {
+    const stockBefore = (await db.select().from(products).where(eq(products.id, ids.apples)))[0].stock;
+    const o = (await order(token, { paymentMethod: 'qr' })).json.order;
+    expect(o.status).toBe('awaiting_payment');
+    expect((await db.select().from(products).where(eq(products.id, ids.apples)))[0].stock).toBe(stockBefore - 2); // reserved
+    expect(await staffSaw(o.id)).toBe(false);
+    const active = (await call('GET', '/api/admin/orders?view=active', adminToken)).json.orders.map((x: any) => x.id);
+    expect(active).not.toContain(o.id);
+
+    const session = (await call('GET', `/api/orders/${o.id}/payment`, token)).json.payment;
+    expect(session.simulated).toBe(true);
+    expect(session.qrImageUrl).toMatch(/^\/api\/payments\/qr\/.+\.png$/);
+    const img = await app.inject({ method: 'GET', url: session.qrImageUrl });
+    expect(img.statusCode).toBe(200);
+    expect(img.headers['content-type']).toBe('image/png');
+
+    const [s1, s2] = await Promise.all([
+      call('POST', `/api/orders/${o.id}/payment/simulate`, token),
+      call('POST', `/api/orders/${o.id}/payment/simulate`, token),
+    ]);
+    expect([s1.status, s2.status]).toEqual([200, 200]);
+    const detail = (await call('GET', `/api/orders/${o.id}`, token)).json.order;
+    expect(detail.status).toBe('placed');
+    expect(detail.paymentStatus).toBe('paid');
+    expect(detail.timeline[0]).toMatchObject({ status: 'awaiting_payment', label: 'Paid', done: true });
+    expect(await staffSaw(o.id)).toBe(true);
+    const alerts = (await db.select().from(notifications).where(eq(notifications.orderId, o.id))).filter((n) => n.kind === 'staff_new_order');
+    const staffCount = (await db.select().from(users).where(sql`${users.role} in ('staff','admin')`)).length;
+    expect(alerts).toHaveLength(staffCount); // exactly one alert per staff member, even with double confirmation
+    expect(new Set(alerts.map((a) => a.chatId)).size).toBe(staffCount);
+    // The QR image stops working once paid.
+    expect((await app.inject({ method: 'GET', url: session.qrImageUrl })).statusCode).toBe(404);
+  });
+
+  it('lets the customer switch to cash, which sends the order to the shop', async () => {
+    const o = (await order(token, { paymentMethod: 'qr' })).json.order;
+    const r = await call('POST', `/api/orders/${o.id}/payment/cash`, token);
+    expect(r.json.payment.paymentMethod).toBe('cash');
+    expect(r.json.payment.status).toBe('placed');
+    expect(await staffSaw(o.id)).toBe(true);
+  });
+
+  it('cancels unpaid QR orders after the payment window and releases stock', async () => {
+    const { expireUnpaidOrders } = await import('../src/services/payments.js');
+    const before = (await db.select().from(products).where(eq(products.id, ids.apples)))[0].stock;
+    const o = (await order(token, { paymentMethod: 'qr' })).json.order;
+    await db.execute(sql`update payments set expires_at = now() - interval '1 minute' where order_id = ${o.id}`);
+    expect(await expireUnpaidOrders()).toBeGreaterThanOrEqual(1);
+    const detail = (await call('GET', `/api/orders/${o.id}`, token)).json.order;
+    expect(detail.status).toBe('cancelled');
+    expect(detail.cancelReason).toMatch(/not completed in time/);
+    expect((await db.select().from(products).where(eq(products.id, ids.apples)))[0].stock).toBe(before);
+    expect(await staffSaw(o.id)).toBe(false);
+    // A late payment is refused.
+    expect((await call('POST', `/api/orders/${o.id}/payment/simulate`, token)).status).toBe(409);
+  });
+
+  it('staff can confirm a QR payment manually, which releases the order', async () => {
+    const o = (await order(token, { paymentMethod: 'qr' })).json.order;
+    expect((await call('POST', `/api/admin/orders/${o.id}/status`, adminToken, { status: 'confirmed' })).status).toBe(409);
+    const r = await call('POST', `/api/admin/orders/${o.id}/payment`, adminToken, { status: 'paid', note: 'Seen in ABA app' });
+    expect(r.json.order.status).toBe('placed');
+    expect(r.json.order.paymentStatus).toBe('paid');
+  });
+
+  it('reports ABA PayWay as not connected yet', async () => {
+    const loyalty = (await call('GET', '/api/admin/loyalty', adminToken)).json;
+    expect(loyalty.paymentProviders.find((p: any) => p.id === 'aba_payway').configured).toBe(false);
+    const settings = { ...loyalty.settings, qrPaymentMode: 'aba_payway' };
+    delete settings.id;
+    delete settings.updatedAt;
+    const r = await call('PUT', '/api/admin/settings', adminToken, settings);
+    expect(r.status).toBe(400);
+    expect(r.json.error.message).toMatch(/ABA PayWay is not connected yet/);
+  });
+});

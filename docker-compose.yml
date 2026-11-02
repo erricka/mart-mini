@@ -1,0 +1,38 @@
+# Local development:   docker compose up -d db        (just Postgres; run the app with `npm run dev`)
+# Production-like:     docker compose --profile app up --build   (Postgres + the built app on http://localhost:3000)
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: market
+      POSTGRES_PASSWORD: market
+      POSTGRES_DB: market_dev
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U market"]
+      interval: 5s
+      retries: 10
+
+  app:
+    build: .
+    profiles: ["app"]
+    env_file: .env
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgres://market:market@db:5432/market_dev
+      MIGRATE_ON_START: "true"
+      PORT: "3000"
+    ports:
+      - "3000:3000"
+    volumes:
+      - uploads:/app/server/uploads
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  pgdata:
+  uploads:
