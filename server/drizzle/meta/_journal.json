@@ -15,6 +15,13 @@
       "when": 1793592165005,
       "tag": "0001_bilingual_mart25",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1793604340538,
+      "tag": "0002_product_sku",
+      "breakpoints": true
     }
   ]
 }

@@ -121,6 +121,8 @@ export const products = pgTable(
       .references(() => categories.id),
     name: text('name').notNull(),
     nameEn: text('name_en'),
+    /** Barcode / SKU — optional; used to match rows when re-importing a spreadsheet. */
+    sku: text('sku'),
     description: text('description').notNull().default(''),
     descriptionEn: text('description_en'),
     unit: text('unit').notNull().default(''),
@@ -138,6 +140,7 @@ export const products = pgTable(
   },
   (t) => [
     index('products_category_idx').on(t.categoryId),
+    uniqueIndex('products_sku_uq').on(t.sku),
     check('products_stock_non_negative', sql`${t.stock} >= 0`),
     check('products_price_non_negative', sql`${t.priceCents} >= 0`),
   ],

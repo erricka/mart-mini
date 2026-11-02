@@ -7,12 +7,14 @@ import { dateTime, fromCents, money, toCents } from '../../lib/format';
 import { toast } from '../../lib/toast';
 import { translate, useT, type TKey } from '../../lib/i18n';
 import { PageHeader, Td, Th } from './common';
+import { ImportProducts } from './ImportProducts';
 
 interface AdminProduct {
   id: number;
   categoryId: number;
   name: string;
   nameEn: string | null;
+  sku: string | null;
   description: string;
   descriptionEn: string | null;
   unit: string;
@@ -41,21 +43,41 @@ const useAdminCategories = () => useQuery({ queryKey: ['admin', 'categories'], q
 
 export function ProductsPage() {
   const { t } = useT();
+  const cats = useAdminCategories();
   const [tab, setTab] = useState<'products' | 'categories'>('products');
+  const [importOpen, setImportOpen] = useState(false);
+  const [editing, setEditing] = useState<Partial<AdminProduct> | null>(null);
+  const newProduct = () => {
+    setTab('products');
+    setEditing({ active: true, emoji: '🛒', categoryId: cats.data?.[0]?.id });
+  };
   return (
     <div>
-      <PageHeader title={t('ap.title')} subtitle={t('ap.subtitle')} />
+      <PageHeader
+        title={t('ap.title')}
+        subtitle={t('ap.subtitle')}
+        actions={
+          <>
+            <Button variant="secondary" onClick={() => setImportOpen(true)}>
+              {t('ap.import')}
+            </Button>
+            <Button onClick={newProduct}>{t('ap.add_product')}</Button>
+          </>
+        }
+      />
       <div className="mb-4 flex gap-2">
         {(['products', 'categories'] as const).map((k) => (
           <button key={k} onClick={() => setTab(k)} className={cx('rounded-full px-4 py-1.5 text-sm font-semibold', tab === k ? 'bg-ink text-bg' : 'bg-surface ring-1 ring-line')}>{t(k === 'products' ? 'ap.tab_products' : 'ap.tab_categories')}</button>
         ))}
       </div>
-      {tab === 'products' ? <Products /> : <Categories />}
+      {tab === 'products' ? <Products onNew={newProduct} onImport={() => setImportOpen(true)} /> : <Categories />}
+      <ProductEditor product={editing} categories={cats.data ?? []} onClose={() => setEditing(null)} />
+      <ImportProducts open={importOpen} onClose={() => setImportOpen(false)} />
     </div>
   );
 }
 
-function Products() {
+function Products({ onNew, onImport }: { onNew: () => void; onImport: () => void }) {
   const { t } = useT();
   const [q, setQ] = useState('');
   const [categoryId, setCategoryId] = useState('');
@@ -86,10 +108,19 @@ function Products() {
             {s === 'all' ? t('ap.filter_all', { n: list.data?.summary.total ?? '…' }) : s === 'low' ? t('ap.filter_low', { n: list.data?.summary.low ?? 0 }) : t('ap.filter_out', { n: list.data?.summary.out ?? 0 })}
           </button>
         ))}
-        <Button className="ml-auto" onClick={() => setEditing({ active: true, emoji: '🛒', categoryId: cats.data?.[0]?.id })}>{t('ap.new_product')}</Button>
       </div>
 
-      {list.isLoading ? <Skeleton className="h-96" /> : list.error ? <ErrorState error={list.error} onRetry={() => list.refetch()} /> : list.data!.products.length === 0 ? (
+      {list.isLoading ? <Skeleton className="h-96" /> : list.error ? <ErrorState error={list.error} onRetry={() => list.refetch()} /> : list.data!.summary.total === 0 ? (
+        <Card className="flex flex-col items-center py-12 text-center">
+          <div className="text-6xl">🛒</div>
+          <h2 className="mt-3 text-xl font-extrabold">{t('ap.empty_title')}</h2>
+          <p className="mt-1 max-w-md text-sm text-muted">{t('ap.empty_text')}</p>
+          <div className="mt-5 flex flex-wrap justify-center gap-2">
+            <Button size="lg" onClick={onImport}>{t('ap.import')}</Button>
+            <Button size="lg" variant="secondary" onClick={onNew}>{t('ap.add_product')}</Button>
+          </div>
+        </Card>
+      ) : list.data!.products.length === 0 ? (
         <EmptyState emoji="📦" title={t('ap.no_match')} />
       ) : (
         <Card className="overflow-x-auto p-0">
@@ -103,7 +134,7 @@ function Products() {
                     <Td>
                       <div className="flex items-center gap-3">
                         <div className="w-11 shrink-0"><ProductImage emoji={p.emoji} imageUrl={p.imageUrl} color={c?.color} size="sm" /></div>
-                        <div className="min-w-0"><div className="font-semibold">{p.name}</div><div className="text-xs text-muted">{[p.nameEn, p.unit].filter(Boolean).join(' · ')}</div></div>
+                        <div className="min-w-0"><div className="font-semibold">{p.name}</div><div className="text-xs text-muted">{[p.nameEn, p.unit, p.sku].filter(Boolean).join(' · ')}</div></div>
                       </div>
                     </Td>
                     <Td className="hidden md:table-cell">{c ? `${c.emoji} ${c.name}` : '—'}</Td>
@@ -152,6 +183,7 @@ function ProductEditor({ product, categories, onClose }: { product: Partial<Admi
         categoryId: Number(form.categoryId),
         name: form.name ?? '',
         nameEn: form.nameEn || null,
+        sku: form.sku || null,
         description: form.description ?? '',
         descriptionEn: form.descriptionEn || null,
         unit: form.unit ?? '',
@@ -207,6 +239,7 @@ function ProductEditor({ product, categories, onClose }: { product: Partial<Admi
           <Field label={t('ap.price')} error={form.price && priceCents == null ? t('ap.price_invalid') : null}><Input inputMode="decimal" value={form.price ?? ''} onChange={set('price')} placeholder="0.00" /></Field>
           <Field label={t('ap.was')} hint={t('ap.was_hint')}><Input inputMode="decimal" value={form.compareAt ?? ''} onChange={set('compareAt')} placeholder="0.00" /></Field>
           <Field label={t('ap.emoji')}><Input value={form.emoji ?? ''} onChange={set('emoji')} maxLength={8} /></Field>
+          <Field label={t('ap.sku')}><Input value={form.sku ?? ''} onChange={set('sku')} inputMode="numeric" placeholder="8850000000011" /></Field>
           {!form.id && <Field label={t('ap.start_stock')}><Input inputMode="numeric" value={form.initialStock ?? '0'} onChange={set('initialStock')} /></Field>}
           <div className="sm:col-span-2"><Field label={t('ap.description')}><Textarea value={form.description ?? ''} onChange={set('description')} /></Field></div>
           <div className="sm:col-span-2"><Field label={t('ap.description_en')}><Textarea value={form.descriptionEn ?? ''} onChange={set('descriptionEn')} /></Field></div>

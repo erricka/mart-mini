@@ -44,8 +44,8 @@ Optional branding in BotFather: `/setuserpic` (logo), `/setdescription` (shown b
    ```
    🌱 First boot: creating the mart25 starter setup …
    Telegram webhook registered
-   Bot menu button → https://mart25.onrender.com
-   🛒 API ready … notifications via Telegram, simulated QR payments off, dev login off
+   Bot menu button → https://mart25.onrender.com (mart25)
+   🛒 API ready on :10000 — notifications via Telegram, dev login off
    ```
 
 ## 3. Connect the bot to the Mini App
@@ -87,13 +87,15 @@ You can now open **`https://t.me/<your_bot>?startapp=store`**, which is what the
    - tagline in Khmer, with optional English
 
    The shop name is already **mart25**. Payments are **cash only** (see *Payments* below).
-2. **ទំនិញ (Catalog) → + ទំនិញថ្មី:** add each product with:
-   - **Khmer name** and optional **English name**
-   - aisle, price, and an optional "was" price for promotions
-   - starting stock
-   - photo (📷 upload)
+2. **ទំនិញ (Catalog): add your products.** The catalog starts empty. The 9 aisles already exist, in Khmer and English. There are two buttons at the top right of the page:
+   - **➕ បន្ថែមទំនិញ (Add product):** add one product with:
+     - **Khmer name**, and an optional **English name**
+     - aisle, price, and an optional "was" price for promotions
+     - starting stock and barcode/SKU
+     - photo (📷 upload; square works best)
+   - **📥 នាំចូលពី Excel (Import from Excel):** upload your whole product list at once. See *Adding products from Excel* below.
 
-   The 9 aisles already exist, in Khmer and English.
+   Products you hide (*Visible* off) or that run out of stock can't be ordered. Customers see "out of stock".
 3. **កម្មវិធីសមាជិក (Loyalty):**
    - points per dollar, welcome bonus, welcome coupon
    - levels and milestone rewards. These are pre-filled in Khmer and English: free delivery at 100 points, $3 off at 250, $5 off at 500, $10 off at 1000. You can add free-product gifts once products exist.
@@ -101,6 +103,35 @@ You can now open **`https://t.me/<your_bot>?startapp=store`**, which is what the
 5. **កូដ QR (QR codes):** download the PNGs or print the posters. Posters are always **bilingual** (Khmer and English). Use the store poster at the entrance and checkouts and the receipt code in the receipt footer. Insights shows which code brings sign-ups.
 
 **Before printing, test end to end:** place an order with the second account, accept it in the dashboard, mark it *Delivered*/*Collected*, and check that the customer receives Telegram messages and points.
+
+## Adding products from Excel
+
+1. **Dashboard → ទំនិញ → 📥 នាំចូលពី Excel → ⬇ ទាញយកគំរូ (Download template).** You get `mart25-products-template.csv`, which opens in Excel or Google Sheets.
+2. Put **one product per row**. Keep the first row (the column names) as it is.
+
+   | Column | Required | Example |
+   | --- | --- | --- |
+   | `name_km` | ✅ | ទឹកដូង |
+   | `category` | ✅ | ភេសជ្ជៈ. Use an existing aisle name (Khmer or English). A new name creates a new aisle. |
+   | `price` | ✅ | `1.99`, or `4000` if your currency is KHR |
+   | `name_en` | | Coconut Water |
+   | `stock` | | `45` (empty = 0 for new products) |
+   | `unit` | | `1 L`, `500 g`, `6 pcs` |
+   | `sku` | | the barcode, e.g. `8850000000011` |
+   | `compare_at_price` | | the old price for a promotion (shows ~~$2.50~~) |
+   | `description_km`, `description_en` | | short description |
+   | `emoji` | | 🥥 (shown until you add a photo; defaults to the aisle's emoji) |
+   | `image_url` | | an `https://` link to a photo |
+   | `featured` | | `yes` puts it under *Popular* on the home screen |
+   | `active` | | `no` keeps it hidden from customers |
+
+   Khmer column names also work (`ឈ្មោះ`, `ប្រភេទ`, `តម្លៃ`, `ស្តុក`, `បាកូដ`).
+3. Save as **.xlsx** or **.csv (UTF-8)** and upload it. Nothing is saved yet: you'll see a preview where each row is marked **ថ្មី (New)**, **កែប្រែ (Update)** or **កំហុស (Error)** with the reason.
+4. Tap **នាំចូលទំនិញ N (Import N products)**. Rows with errors are skipped. Fix them in the file and upload again.
+
+**Updating prices or stock in bulk:** upload the same sheet again with new numbers. A row whose **barcode/SKU** (or, without a barcode, the same **Khmer name**) already exists updates that product instead of adding a duplicate. Empty cells leave the current value unchanged. Stock changes are recorded in the stock history as "Import (row N)".
+
+**Photos:** after importing, open a product → **កែប្រែ (Edit) → 📷 ផ្ទុករូបថត (Upload photo)**. Or put photo links in `image_url` before importing.
 
 ## Payments
 

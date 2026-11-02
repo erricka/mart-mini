@@ -370,3 +370,48 @@ describe('Languages (Khmer / English)', () => {
     expect(r.status).toBe(400);
   });
 });
+
+describe('Bulk product import (Excel/CSV)', () => {
+  const rows = [
+    { row: 2, sku: '8850001', name: 'ទឹកដូងក្រអូប', nameEn: 'Coconut Water', category: 'Fresh Produce', price: '1.75', stock: '24', unit: '1 L' },
+    { row: 3, name: 'អង្ករផ្កាម្លិះ', nameEn: 'Jasmine Rice', category: 'អង្ករ', price: '$6.50', stock: 10, featured: 'yes' },
+    { row: 4, name: '', category: 'Fresh Produce', price: '1' },
+    { row: 5, name: 'Bad price', category: 'Fresh Produce', price: 'abc' },
+    { row: 6, sku: '8850001', name: 'Duplicate', category: 'Fresh Produce', price: '1' },
+  ];
+
+  it('previews without writing, then imports valid rows and auto-creates new aisles', async () => {
+    const before = (await db.select().from(products)).length;
+    const preview = await call('POST', '/api/admin/products/import', adminToken, { dryRun: true, rows });
+    expect(preview.status).toBe(200);
+    expect(preview.json.summary).toMatchObject({ create: 2, update: 0, error: 3, newCategories: ['អង្ករ'] });
+    expect(preview.json.rows.find((r: any) => r.row === 6).error).toMatch(/row 2/);
+    expect((await db.select().from(products)).length).toBe(before);
+
+    const applied = await call('POST', '/api/admin/products/import', adminToken, { dryRun: false, rows });
+    expect(applied.json.dryRun).toBe(false);
+    const [water] = await db.select().from(products).where(eq(products.sku, '8850001'));
+    expect(water).toMatchObject({ name: 'ទឹកដូងក្រអូប', nameEn: 'Coconut Water', priceCents: 175, stock: 24 });
+    const [produce] = await db.select().from(categories).where(eq(categories.id, water.categoryId));
+    expect(water.emoji).toBe(produce.emoji); // no emoji column → the aisle's emoji
+    const [rice] = await db.select().from(products).where(eq(products.name, 'អង្ករផ្កាម្លិះ'));
+    expect(rice.priceCents).toBe(650);
+    expect(rice.featured).toBe(true);
+    const [riceCat] = await db.select().from(categories).where(eq(categories.id, rice.categoryId));
+    expect(riceCat.name).toBe('អង្ករ');
+  });
+
+  it('re-importing updates existing products by SKU (price, stock) and audits the stock change', async () => {
+    const r = await call('POST', '/api/admin/products/import', adminToken, { dryRun: false, rows: [{ row: 2, sku: '8850001', name: 'ទឹកដូងក្រអូប', price: '1.95', stock: '30' }] });
+    expect(r.json.summary).toMatchObject({ create: 0, update: 1, error: 0 });
+    const [water] = await db.select().from(products).where(eq(products.sku, '8850001'));
+    expect(water.priceCents).toBe(195);
+    expect(water.stock).toBe(30);
+    expect(water.nameEn).toBe('Coconut Water'); // empty cells keep existing values
+  });
+
+  it('is staff-only', async () => {
+    const c = await onboard({ id: 9800, first_name: 'Nobody' }, '+85599000444');
+    expect((await call('POST', '/api/admin/products/import', c.token, { dryRun: true, rows })).status).toBe(403);
+  });
+});

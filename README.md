@@ -117,6 +117,19 @@ See **[docs/DEPLOY.md](docs/DEPLOY.md)**. In short:
 
 Telegram notifications are real when `TELEGRAM_BOT_TOKEN` is set. Without it they're clearly marked **SIMULATED** (logged and shown on each order).
 
+## Adding products
+
+The catalog starts empty. **Dashboard → ទំនិញ (Catalog)** has two buttons:
+
+- **➕ បន្ថែមទំនិញ (Add product):** one product at a time, with photo upload.
+- **📥 នាំចូលពី Excel (Import from Excel):** download the template, fill it in Excel or Google Sheets, then upload the `.xlsx` or `.csv`. You see a preview (new, update, error) before anything is saved. Re-uploading updates products by barcode/SKU, or by Khmer name if there's no barcode, so it also works for bulk price and stock changes.
+
+Column reference: [docs/DEPLOY.md → Adding products from Excel](docs/DEPLOY.md#adding-products-from-excel).
+
+| Empty catalog | Import from Excel |
+| --- | --- |
+| ![](docs/screenshots/dashboard-catalog-empty-km.png) | ![](docs/screenshots/dashboard-import-km.png) |
+
 ## QR codes
 
 **Dashboard → កូដ QR** gives ready-made codes for the store poster, receipts and flyers, plus custom tags. Each has a PNG download and a printable **bilingual poster** (Khmer and English). Links look like `https://t.me/<bot>?startapp=store`. The tag is saved as the customer's sign-up source and shown in Insights.
@@ -137,14 +150,14 @@ Telegram notifications are real when `TELEGRAM_BOT_TOKEN` is set. Without it the
 server/src
   lib/i18n.ts        server & bot translations (km/en), request language, per-recipient language
   routes/            public (auth, onboarding, catalog), customer, telegram, admin/*
-  services/          checkout, orders, loyalty, notifications, identity, bot, pricing
+  services/          checkout, orders, loyalty, notifications, identity, bot, pricing, productImport
   db/                schema.ts, migrate, seed (starter + demo), reset
 server/test          unit + integration tests
 web/src
   i18n/              en.ts, km.ts (customer) · en-admin.ts, km-admin.ts (dashboard)
   pages/onboarding   splash, dev login, language → welcome → about → privacy → celebration
   pages/customer     home, shop, product, cart, checkout, orders, tracking, rewards, profile
-  pages/admin        orders, catalog, customers, loyalty, insights, QR codes, settings
+  pages/admin        orders, catalog (+ Excel/CSV import), customers, loyalty, insights, QR codes, settings
 docs/                PLAN.md, DEPLOY.md, screenshots
 ```
 

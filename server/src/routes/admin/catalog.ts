@@ -7,15 +7,17 @@ import { z } from 'zod';
 import { config } from '../../config.js';
 import { db } from '../../db/client.js';
 import { categories, inventoryMovements, products } from '../../db/schema.js';
-import { badRequest, notFound } from '../../lib/errors.js';
+import { badRequest, isUniqueViolation, notFound } from '../../lib/errors.js';
 import { tr } from '../../lib/i18n.js';
 import { idParam, parse } from '../../lib/validate.js';
 import { makeGuards } from '../../plugins/auth.js';
+import { importProducts, importSchema } from '../../services/productImport.js';
 
 const productInput = z.object({
   categoryId: z.number().int().positive(),
   name: z.string().trim().min(1, 'err.product_name').max(120),
   nameEn: z.string().trim().max(120).nullable().optional(),
+  sku: z.string().trim().max(64).nullable().optional(),
   description: z.string().trim().max(2000).default(''),
   descriptionEn: z.string().trim().max(2000).nullable().optional(),
   unit: z.string().trim().max(40).default(''),
@@ -80,7 +82,7 @@ export async function adminCatalogRoutes(app: FastifyInstance) {
     const where: SQL[] = [];
     if (q.q) {
       const like = `%${q.q.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
-      where.push(or(ilike(products.name, like), ilike(products.tags, like))!);
+      where.push(or(ilike(products.name, like), ilike(products.nameEn, like), ilike(products.sku, like), ilike(products.tags, like))!);
     }
     if (q.categoryId) where.push(eq(products.categoryId, q.categoryId));
     if (q.stock === 'low') where.push(sql`${products.stock} between 1 and 5`);
@@ -106,7 +108,7 @@ export async function adminCatalogRoutes(app: FastifyInstance) {
     const created = await db.transaction(async (tx) => {
       const [p] = await tx
         .insert(products)
-        .values({ ...body, nameEn: body.nameEn || null, descriptionEn: body.descriptionEn || null, imageUrl: body.imageUrl || null, compareAtCents: body.compareAtCents ?? null })
+        .values({ ...body, sku: body.sku || null, nameEn: body.nameEn || null, descriptionEn: body.descriptionEn || null, imageUrl: body.imageUrl || null, compareAtCents: body.compareAtCents ?? null })
         .returning();
       if (body.stock > 0) {
         await tx.insert(inventoryMovements).values({
@@ -118,6 +120,9 @@ export async function adminCatalogRoutes(app: FastifyInstance) {
         });
       }
       return p;
+    }).catch((err) => {
+      if (isUniqueViolation(err, 'products_sku_uq')) throw badRequest('sku_taken', tr('err.sku_taken'));
+      throw err;
     });
     return reply.status(201).send({ product: created });
   });
@@ -127,11 +132,21 @@ export async function adminCatalogRoutes(app: FastifyInstance) {
     const body = parse(productInput, req.body);
     const [p] = await db
       .update(products)
-      .set({ ...body, nameEn: body.nameEn || null, descriptionEn: body.descriptionEn || null, imageUrl: body.imageUrl || null, compareAtCents: body.compareAtCents ?? null, updatedAt: new Date() })
+      .set({ ...body, sku: body.sku || null, nameEn: body.nameEn || null, descriptionEn: body.descriptionEn || null, imageUrl: body.imageUrl || null, compareAtCents: body.compareAtCents ?? null, updatedAt: new Date() })
       .where(eq(products.id, id))
-      .returning();
+      .returning()
+      .catch((err) => {
+        if (isUniqueViolation(err, 'products_sku_uq')) throw badRequest('sku_taken', tr('err.sku_taken'));
+        throw err;
+      });
     if (!p) throw notFound(tr('err.product_not_found'));
     return { product: p };
+  });
+
+  /** Bulk import from Excel/CSV. dryRun=true returns a preview; dryRun=false applies valid rows in one transaction. */
+  app.post('/products/import', { bodyLimit: 5_000_000 }, async (req) => {
+    const body = parse(importSchema, req.body);
+    return importProducts(body, req.account!.id);
   });
 
   /** Audited stock change. "add" for deliveries/returns (negative = write-off), "set" after a stock count. */
