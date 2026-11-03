@@ -339,7 +339,7 @@ export const km: Record<keyof typeof en, string> = {
   'co.too_far': 'ឆ្ងាយពេកសម្រាប់ការដឹកជញ្ជូន — យើងដឹកបានរហូតដល់ {max} គ.ម។ សូមជ្រើសរើសមកយកនៅហាង។',
   'co.when': 'តើចង់ឱ្យដឹកពេលណា?',
   'co.today': '⚡ ថ្ងៃនេះ',
-  'co.today_text': 'គិតថ្លៃតាមចម្ងាយ ដូច Grab',
+  'co.today_text': 'គិតថ្លៃតាមចម្ងាយ',
   'co.tomorrow': '📅 ថ្ងៃស្អែក',
   'co.tomorrow_text': '{date} · បើអ្នកអាចរង់ចាំបាន',
   'co.fee_after_pin': 'ដាក់ម្ជុលដើម្បីមើលតម្លៃ',

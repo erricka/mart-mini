@@ -39,7 +39,7 @@ export const cartSchema = z.object({
   fulfillmentType: z.enum(['delivery', 'pickup']),
   /** Customer's map pin for delivery (drives the distance-based fee). */
   location: latLngSchema.optional().nullable(),
-  /** "same_day" (Grab-style fee) or "next_day" (I can wait until tomorrow). */
+  /** "same_day" (priced by distance) or "next_day" (I can wait until tomorrow). */
   deliverySpeed: z.enum(['same_day', 'next_day']).optional().default('same_day'),
   couponCode: z.string().trim().max(40).optional().nullable(),
   customerRewardId: z.number().int().positive().optional().nullable(),

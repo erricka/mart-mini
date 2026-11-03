@@ -80,7 +80,7 @@ const roundUp = (cents: number, currency: string) => {
 };
 
 /**
- * Grab-style delivery pricing: base fare + per-km rate on the estimated road distance, with a
+ * Distance-based delivery pricing: base fare + per-km rate on the estimated road distance, with a
  * minimum fee, rounded up to a friendly amount. "Tomorrow" is a flat fee, never more than today.
  */
 export function deliveryOptions(settings: PricingSettings, destination: LatLng | null): DeliveryOptions {

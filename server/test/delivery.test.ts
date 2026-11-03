@@ -26,7 +26,7 @@ const quote = (over: Partial<Parameters<typeof calculateQuote>[0]> = {}) =>
   calculateQuote({ settings, multiplierPercent: 100, now: new Date(), lines: [{ product: product(1000), quantity: 1 }], fulfillment: 'delivery', ...over });
 const north = (km: number) => ({ lat: STORE.lat + km / 111.2, lng: STORE.lng }); // straight-line km due north
 
-describe('distance-based delivery fee (Grab-style)', () => {
+describe('distance-based delivery fee', () => {
   it('estimates road distance as straight line × 1.3', () => {
     expect(roadKm(STORE, north(1))).toBeCloseTo(1.3, 1);
     expect(roadKm(STORE, north(10))).toBeCloseTo(13, 0);

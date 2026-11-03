@@ -350,7 +350,7 @@ export const en = {
   'co.too_far': 'Too far for delivery — we deliver up to {max} km. Please choose pickup.',
   'co.when': 'When should we deliver?',
   'co.today': '⚡ Today',
-  'co.today_text': 'Priced by distance, like Grab',
+  'co.today_text': 'Priced by distance',
   'co.tomorrow': '📅 Tomorrow',
   'co.tomorrow_text': '{date} · if you can wait',
   'co.fee_after_pin': 'Set the pin to see the price',

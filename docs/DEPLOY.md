@@ -173,19 +173,19 @@ You can now open **`https://t.me/<your_bot>?startapp=store`**, which is what the
 
 At checkout, customers choosing delivery **drop a pin on a map**: they move the map until the pin is on their door, or tap **📍 ប្រើទីតាំងខ្ញុំ (Use my location)**. The fee is worked out on the server from the distance between your store and that pin.
 
-- **Today (⚡ ថ្ងៃនេះ):** Grab-style price: **base fare + price per km**, never below a **minimum fee**, rounded up to 5¢ (or 100៛). The distance is the straight line × 1.3, which approximates the road distance.
+- **Today (⚡ ថ្ងៃនេះ):** priced by distance: **base fare + price per km**, never below a **minimum fee**, rounded up to 5¢ (or 100៛). The distance is the straight line × 1.3, which approximates the road distance.
 - **Tomorrow (📅 ថ្ងៃស្អែក):** if the customer can wait until the next day, a flat **$2.00**. It's never more than the same-day price.
 - Spending above the **free-delivery threshold** makes either option free, and free-delivery rewards also apply.
 - Pins farther than the **farthest delivery** distance (20 km by default) can't order delivery. Those customers are asked to choose pickup.
 
-**Default prices.** Grab doesn't publish a delivery rate card for Cambodia, so the defaults use Grab's published GrabBike rates: **៛1,500 base, ៛1,000 per km, ៛2,500 minimum**, about $0.38, $0.25 and $0.63. That gives roughly:
+**Default prices:** **៛1,500 base, ៛1,000 per km, ៛2,500 minimum**, about $0.38, $0.25 and $0.63. That gives roughly:
 
 | Distance | 1 km | 3 km | 5 km | 10 km |
 | --- | --- | --- | --- | --- |
 | Today | $0.65 | $1.15 | $1.65 | $2.90 |
 | Tomorrow | $0.65 | $1.15 | $1.65 | $2.00 |
 
-You can change every number in **Dashboard → ការកំណត់ (Settings) → 🛵 Delivery fee & store location**. The example table updates as you type. To match Grab exactly, get a few quotes in the Grab app from your shop to nearby areas and adjust.
+You can change every number in **Dashboard → ការកំណត់ (Settings) → 🛵 Delivery fee & store location**. The example table updates as you type. To match local delivery prices, compare a few real quotes from your shop to nearby areas and adjust.
 
 **Store location.** The server reads mart25's Google Maps link (`https://maps.app.goo.gl/1oWhhoUpnBVtErKN8`) on start-up and places the 🏪 pin. The log shows `📍 Store location set from the Maps link`. Check it in Settings and **Save**. To move it: drag the map, or paste a Google Maps link (in Google Maps: **Share → Copy link**) or coordinates like `11.5564, 104.9282`, then tap **ស្វែងរក (Find)**. Until a pin is set, delivery uses the flat **delivery fee**.
 

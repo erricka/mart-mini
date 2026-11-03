@@ -185,7 +185,7 @@ export const shopSettings = pgTable(
     freeDeliveryMinCents: integer('free_delivery_min_cents'),
     minOrderCents: integer('min_order_cents').notNull().default(0),
     /**
-     * 'distance' = Grab-style fee from the store to the customer's map pin (falls back to the flat
+     * 'distance' = fee by distance from the store to the customer's map pin (falls back to the flat
      * deliveryFeeCents while the store location is unknown); 'flat' = always deliveryFeeCents.
      */
     deliveryPricing: text('delivery_pricing').notNull().default('distance'),
@@ -193,7 +193,7 @@ export const shopSettings = pgTable(
     storeLng: doublePrecision('store_lng'),
     /** Google Maps link for the store; resolved to storeLat/storeLng by the server. */
     storeMapsUrl: text('store_maps_url'),
-    // Defaults follow Grab Cambodia's published motorbike rates (KHR 1,500 base, 1,000/km, 2,500 minimum) at ~4,000៛/$.
+    // Default rates: KHR 1,500 base, 1,000/km, 2,500 minimum (at ~4,000៛/$).
     deliveryBaseCents: integer('delivery_base_cents').notNull().default(38),
     deliveryPerKmCents: integer('delivery_per_km_cents').notNull().default(25),
     deliveryMinFeeCents: integer('delivery_min_fee_cents').notNull().default(63),

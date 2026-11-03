@@ -219,7 +219,7 @@ function SettingsForm({ data }: { data: LoyaltyData }) {
                     </div>
                   ))}
                 </div>
-                <p className="mt-2 text-xs text-muted">{t('as.dm_grab_note')}</p>
+                <p className="mt-2 text-xs text-muted">{t('as.dm_rates_note')}</p>
               </div>
             </>
           )}
