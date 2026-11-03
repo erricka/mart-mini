@@ -1,12 +1,14 @@
 import { config } from './config.js';
 import { buildApp } from './app.js';
-import { pool } from './db/client.js';
+import { pool, waitForDatabase } from './db/client.js';
 import { runMigrations } from './db/migrate.js';
 import { seedStarter } from './db/seed.js';
 import { configureBot } from './services/bot.js';
 import { ensureStoreLocation } from './services/settings.js';
 import { dispatchPending, startNotificationWorker } from './services/notifications.js';
 
+// A database that was just resumed (or is still booting) can take a minute to accept connections.
+await waitForDatabase();
 if (config.MIGRATE_ON_START) await runMigrations();
 if (config.SEED_ON_START === 'starter') await seedStarter();
 
