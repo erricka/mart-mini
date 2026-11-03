@@ -503,3 +503,34 @@ describe('Google Maps support', () => {
     expect(csp).toContain('report-uri /api/csp-report');
   });
 });
+
+describe('Photos stored in the database', () => {
+  const PNG = Buffer.from(
+    '89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000000d49444154789c6360f8cf000000030101005d1c21dc0000000049454e44ae426082',
+    'hex',
+  );
+  it('uploads a product photo into the database and serves it with long caching', async () => {
+    const boundary = '----mart25';
+    const body = Buffer.concat([
+      Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="a.png"\r\nContent-Type: image/png\r\n\r\n`),
+      PNG,
+      Buffer.from(`\r\n--${boundary}--\r\n`),
+    ]);
+    const up = await app.inject({
+      method: 'POST',
+      url: '/api/admin/uploads',
+      headers: { authorization: `Bearer ${adminToken}`, 'content-type': `multipart/form-data; boundary=${boundary}` },
+      payload: body,
+    });
+    expect(up.statusCode).toBe(200);
+    const url = up.json().url as string;
+    expect(url).toMatch(/^\/media\/[0-9a-f-]{36}\.png$/);
+    const res = await app.inject({ method: 'GET', url });
+    expect(res.statusCode).toBe(200);
+    expect(res.headers['content-type']).toBe('image/png');
+    expect(res.headers['cache-control']).toContain('immutable');
+    expect(Buffer.compare(res.rawPayload, PNG)).toBe(0);
+    expect((await app.inject({ method: 'GET', url: '/media/not-a-photo.png' })).statusCode).toBe(404);
+    expect((await app.inject({ method: 'GET', url: '/media/%2e%2e%2fsecret.png' })).statusCode).toBe(404);
+  });
+});

@@ -19,6 +19,7 @@ import { adminOrderRoutes } from './routes/admin/orders.js';
 import { customerRoutes } from './routes/customer.js';
 import { publicRoutes } from './routes/public.js';
 import { cspReportRoutes, telegramRoutes } from './routes/telegram.js';
+import { getMedia } from './services/media.js';
 
 const webDist = resolve(dirname(fileURLToPath(import.meta.url)), '../../web/dist');
 
@@ -108,6 +109,18 @@ export async function buildApp() {
     { prefix: '/api' },
   );
 
+  // Product photos stored in the database.
+  app.get('/media/:id', async (req, reply) => {
+    const m = await getMedia((req.params as { id: string }).id);
+    if (!m) return reply.status(404).send({ error: { code: 'not_found', message: tr('err.not_found') } });
+    return reply
+      .header('content-type', m.contentType)
+      .header('cache-control', 'public, max-age=31536000, immutable')
+      .header('x-content-type-options', 'nosniff')
+      .send(m.bytes);
+  });
+
+  // Older photos saved on disk (moved into the database on start-up; kept for hosts that still have them).
   await mkdir(config.uploadDir, { recursive: true });
   await app.register(fastifyStatic, {
     root: config.uploadDir,

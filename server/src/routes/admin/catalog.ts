@@ -1,6 +1,3 @@
-import { randomUUID } from 'node:crypto';
-import { mkdir, writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
 import { and, asc, desc, eq, ilike, or, sql, type SQL } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
@@ -12,6 +9,7 @@ import { tr } from '../../lib/i18n.js';
 import { idParam, parse } from '../../lib/validate.js';
 import { makeGuards } from '../../plugins/auth.js';
 import { importProducts, importSchema } from '../../services/productImport.js';
+import { saveMedia } from '../../services/media.js';
 
 const productInput = z.object({
   categoryId: z.number().int().positive(),
@@ -224,7 +222,7 @@ export async function adminCatalogRoutes(app: FastifyInstance) {
     return { category: c };
   });
 
-  // ---------- Image upload (local disk; swap for S3/R2 in production) ----------
+  // ---------- Image upload (stored in the database → works without a persistent disk) ----------
   app.post('/uploads', async (req) => {
     const file = await req.file();
     if (!file) throw badRequest('no_file', tr('err.no_file'));
@@ -233,9 +231,6 @@ export async function adminCatalogRoutes(app: FastifyInstance) {
     const buf = await file.toBuffer();
     if (file.file.truncated) throw badRequest('too_large', tr('err.image_too_large', { n: config.MAX_UPLOAD_MB }));
     if (!type.magic(buf)) throw badRequest('bad_type', tr('err.bad_image'));
-    await mkdir(config.uploadDir, { recursive: true });
-    const name = `${randomUUID()}.${type.ext}`;
-    await writeFile(join(config.uploadDir, name), buf);
-    return { url: `/uploads/${name}` };
+    return { url: await saveMedia(buf, type.ext) };
   });
 }

@@ -1,6 +1,7 @@
 import { sql } from 'drizzle-orm';
 import {
   bigint,
+  customType,
   boolean,
   check,
   date,
@@ -16,6 +17,7 @@ import {
 } from 'drizzle-orm/pg-core';
 
 const ts = (name: string) => timestamp(name, { withTimezone: true });
+const bytea = customType<{ data: Buffer; driverData: Buffer }>({ dataType: () => 'bytea' });
 const createdAt = () => ts('created_at').notNull().defaultNow();
 
 // ---------- Enums ----------
@@ -539,3 +541,17 @@ export type PaymentMethod = (typeof paymentMethodEnum.enumValues)[number];
 export type FulfillmentType = (typeof fulfillmentEnum.enumValues)[number];
 export type Role = (typeof roleEnum.enumValues)[number];
 export type QrPaymentMode = (typeof qrPaymentModeEnum.enumValues)[number];
+
+// ---------- Uploaded images ----------
+/**
+ * Product photos live in the database (not on disk) so the app runs on hosts without a persistent
+ * disk, e.g. free plans. Uploads are resized in the browser first, so rows stay small.
+ */
+export const media = pgTable('media', {
+  /** "<uuid>.<ext>" — also the public path: /media/<id> */
+  id: text('id').primaryKey(),
+  contentType: text('content_type').notNull(),
+  bytes: bytea('bytes').notNull(),
+  size: integer('size').notNull(),
+  createdAt: createdAt(),
+});

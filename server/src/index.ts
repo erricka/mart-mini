@@ -1,15 +1,19 @@
 import { config } from './config.js';
 import { buildApp } from './app.js';
 import { pool, waitForDatabase } from './db/client.js';
+import { copyDatabaseFrom } from './db/copy.js';
 import { runMigrations } from './db/migrate.js';
 import { seedStarter } from './db/seed.js';
 import { configureBot } from './services/bot.js';
+import { importDiskPhotos } from './services/media.js';
 import { ensureStoreLocation } from './services/settings.js';
 import { dispatchPending, startNotificationWorker } from './services/notifications.js';
 
 // A database that was just resumed (or is still booting) can take a minute to accept connections.
 await waitForDatabase();
 if (config.MIGRATE_ON_START) await runMigrations();
+// Moving to a new database: copy everything from the old one first (only into an empty database).
+if (config.COPY_FROM_DATABASE_URL) await copyDatabaseFrom(config.COPY_FROM_DATABASE_URL);
 if (config.SEED_ON_START === 'starter') await seedStarter();
 
 const app = await buildApp();
@@ -22,6 +26,8 @@ const stopBot = await configureBot(app.log).catch((err) => {
 void dispatchPending();
 // Reads the store's Google Maps link into a pin the first time (needs internet; never blocks start-up).
 void ensureStoreLocation(app.log);
+// Photos uploaded before they were stored in the database (old /uploads disk) → database.
+await importDiskPhotos(app.log);
 
 await app.listen({ port: config.PORT, host: config.HOST });
 app.log.info(

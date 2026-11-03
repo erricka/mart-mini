@@ -29,6 +29,13 @@
       "when": 1793686833073,
       "tag": "0003_delivery_map",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1793706891560,
+      "tag": "0004_media_in_db",
+      "breakpoints": true
     }
   ]
 }

@@ -4,6 +4,7 @@ import { ProductImage } from '../../components/ProductImage';
 import { Badge, Button, Card, cx, EmptyState, ErrorState, Field, Input, Notice, Select, Sheet, Skeleton, Textarea, Toggle } from '../../components/ui';
 import { api, errorMessage } from '../../lib/api';
 import { dateTime, fromCents, money, toCents } from '../../lib/format';
+import { shrinkImage } from '../../lib/image';
 import { toast } from '../../lib/toast';
 import { translate, useT, type TKey } from '../../lib/i18n';
 import { PageHeader, Td, Th } from './common';
@@ -210,7 +211,7 @@ function ProductEditor({ product, categories, onClose }: { product: Partial<Admi
     setUploading(true);
     try {
       const fd = new FormData();
-      fd.append('file', file);
+      fd.append('file', await shrinkImage(file));
       const r = await api<{ url: string }>('/admin/uploads', { form: fd, method: 'POST' });
       setForm((f) => ({ ...f, imageUrl: r.url }));
     } catch (e) {

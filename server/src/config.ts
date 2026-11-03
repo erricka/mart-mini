@@ -24,6 +24,11 @@ const schema = z.object({
   LOG_LEVEL: z.string().default('info'),
   DATABASE_URL: z.string().min(1, 'DATABASE_URL is required'),
   DATABASE_SSL: bool(false),
+  /**
+   * One-time move to a new database: on start-up, if DATABASE_URL points at an EMPTY database and
+   * this is set, every table is copied from here first. Remove it after the move.
+   */
+  COPY_FROM_DATABASE_URL: z.string().trim().optional().default(''),
   SESSION_SECRET: z.string().min(32, 'SESSION_SECRET must be at least 32 characters'),
   PUBLIC_URL: z
     .string()

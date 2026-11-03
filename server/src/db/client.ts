@@ -3,8 +3,23 @@ import { drizzle } from 'drizzle-orm/node-postgres';
 import { config } from '../config.js';
 import * as schema from './schema.js';
 
+/**
+ * Hosted Postgres URLs (e.g. Neon) carry libpq options node-postgres doesn't need: drop
+ * channel_binding, and spell sslmode=require as verify-full (what pg does anyway, minus the warning).
+ */
+export function normalizeDatabaseUrl(raw: string) {
+  try {
+    const u = new URL(raw);
+    u.searchParams.delete('channel_binding');
+    if (u.searchParams.get('sslmode') === 'require' || u.searchParams.get('sslmode') === 'prefer') u.searchParams.set('sslmode', 'verify-full');
+    return u.toString();
+  } catch {
+    return raw;
+  }
+}
+
 export const pool = new pg.Pool({
-  connectionString: config.DATABASE_URL,
+  connectionString: normalizeDatabaseUrl(config.DATABASE_URL),
   max: 10,
   ssl: config.DATABASE_SSL ? { rejectUnauthorized: false } : undefined,
 });
