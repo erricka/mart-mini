@@ -1,17 +1,19 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, Navigate, useNavigate } from 'react-router-dom';
 import { Button, Card, cx, Field, Input, Notice, Skeleton, Textarea } from '../../components/ui';
 import { api, ApiError, errorMessage } from '../../lib/api';
 import { useCart } from '../../lib/cart';
-import { money } from '../../lib/format';
+import { dayLabel, money } from '../../lib/format';
 import { useT } from '../../lib/i18n';
 import { useAddresses, useShop } from '../../lib/queries';
 import { useSession } from '../../lib/session';
 import { canRequestContact, haptic, requestTelegramContact } from '../../lib/telegram';
 import { toast } from '../../lib/toast';
-import type { CouponInfo, OrderDetail, User, WalletItem } from '../../lib/types';
+import type { CouponInfo, DeliverySpeed, LatLng, OrderDetail, User, WalletItem } from '../../lib/types';
 import { useCartQuote } from './Cart';
+
+const MapPicker = lazy(() => import('../../components/MapPicker'));
 
 const KEY_STORAGE = 'sm-checkout-key';
 /** One idempotency key per checkout attempt: retries / double taps can never create two orders. */
@@ -50,6 +52,9 @@ export function Checkout() {
   const [codeInput, setCodeInput] = useState('');
   const [note, setNote] = useState('');
   const [error, setError] = useState<string | null>(null);
+  /** Customer's map pin (distance pricing) and "today / tomorrow" choice. */
+  const [pin, setPin] = useState<LatLng | null>(null);
+  const [speed, setSpeed] = useState<DeliverySpeed>('same_day');
   // Set synchronously on success so clearing the cart doesn't trigger the empty-cart redirect.
   const placed = useRef(false);
 
@@ -63,12 +68,18 @@ export function Checkout() {
       else setAddingAddress(true);
     }
   }, [addresses.data, addressId]);
+  // Picking a saved address brings back its pin (customers can still fine-tune it).
+  useEffect(() => {
+    if (addingAddress) return;
+    const a = addresses.data?.find((x) => x.id === addressId);
+    setPin(a && a.lat != null && a.lng != null ? { lat: a.lat, lng: a.lng } : null);
+  }, [addressId, addingAddress, addresses.data]);
 
   const discountParams = useMemo(
     () => (discount?.kind === 'reward' ? { customerRewardId: discount.id } : discount?.kind === 'code' ? { couponCode: discount.code } : {}),
     [discount],
   );
-  const quoteQ = useCartQuote(fulfillment, discountParams);
+  const quoteQ = useCartQuote(fulfillment, discountParams, { location: pin, deliverySpeed: speed });
   const q = quoteQ.data?.quote;
   const wallet: WalletItem[] = quoteQ.data?.discounts.wallet ?? [];
   const publicCoupons: CouponInfo[] = quoteQ.data?.discounts.publicCoupons ?? [];
@@ -85,6 +96,8 @@ export function Checkout() {
           contactName: contactName.trim(),
           contactPhone: contactPhone.trim(),
           addressId: fulfillment === 'delivery' && !addingAddress ? addressId : null,
+          location: fulfillment === 'delivery' ? pin : null,
+          deliverySpeed: speed,
           address:
             fulfillment === 'delivery' && addingAddress
               ? { label: 'Home', line1: newAddress.line1, line2: newAddress.line2 || null, city: newAddress.city, instructions: newAddress.instructions || null, save: true }
@@ -127,9 +140,23 @@ export function Checkout() {
     }
   };
 
-  const deliveryReady = fulfillment === 'pickup' || (addingAddress ? newAddress.line1.trim().length >= 3 && newAddress.city.trim().length >= 2 : addressId != null);
-  const canPlace = !!q?.canPlace && deliveryReady && contactName.trim() && contactPhone.trim().length >= 5 && !(discount && q?.couponError);
   const s = shop.data;
+  const byDistance = s?.deliveryPricing === 'distance';
+  const dq = fulfillment === 'delivery' ? q?.delivery : null;
+  const addressReady = addingAddress ? newAddress.line1.trim().length >= 3 && newAddress.city.trim().length >= 2 : addressId != null;
+  const deliveryReady = fulfillment === 'pickup' || (addressReady && (!byDistance || (pin != null && !dq?.tooFar)));
+  const canPlace = !!q?.canPlace && deliveryReady && contactName.trim() && contactPhone.trim().length >= 5 && !(discount && q?.couponError);
+  const deliveryCardText = !s?.deliveryEnabled
+    ? t('co.unavailable_today')
+    : q && fulfillment === 'delivery' && q.delivery?.freeByThreshold
+      ? t('common.free')
+      : byDistance
+        ? dq?.sameDayFeeCents != null
+          ? money(speed === 'next_day' && dq.nextDayFeeCents != null ? dq.nextDayFeeCents : dq.sameDayFeeCents)
+          : t('co.from', { amount: money(Math.min(s.deliveryMinFeeCents, s.nextDayEnabled ? s.nextDayFeeCents : Infinity)) })
+        : s
+          ? money(s.deliveryFeeCents)
+          : '';
   const labelOf = (l: string) => (['Home', 'Work', 'Other'].includes(l) ? t(`pf.label_${l}` as 'pf.label_Home') : l);
 
   return (
@@ -146,7 +173,7 @@ export function Checkout() {
             onClick={() => setFulfillment('delivery')}
             icon="🚚"
             title={t('co.delivery')}
-            text={!s?.deliveryEnabled ? t('co.unavailable_today') : q && fulfillment === 'delivery' && q.baseDeliveryFeeCents === 0 ? t('common.free') : s ? money(s.deliveryFeeCents) : ''}
+            text={deliveryCardText}
           />
           <OptionCard active={fulfillment === 'pickup'} disabled={!s?.pickupEnabled} onClick={() => setFulfillment('pickup')} icon="🏪" title={t('co.pickup')} text={s?.pickupEnabled ? t('co.pickup_free') : t('co.unavailable')} />
         </div>
@@ -210,6 +237,59 @@ export function Checkout() {
               )}
             </div>
           )}
+        </section>
+      )}
+
+      {/* 2b. Map pin — the fee depends on the distance from the store */}
+      {fulfillment === 'delivery' && byDistance && (
+        <section>
+          <h2 className="mb-2 font-bold">{t('co.pin_title')}</h2>
+          <Suspense fallback={<Skeleton className="h-[260px] rounded-3xl" />}>
+            <MapPicker value={pin} onChange={setPin} store={s?.store} hint={t('co.pin_hint')} />
+          </Suspense>
+          <div className="mt-2 text-sm">
+            {!pin ? (
+              <p className="text-muted">{t('co.pin_needed')}</p>
+            ) : dq?.tooFar ? (
+              <Notice tone="error">{t('co.too_far', { max: dq.maxKm ?? '' })}</Notice>
+            ) : dq?.distanceKm != null ? (
+              <p className="font-semibold">{t('co.pin_distance', { km: dq.distanceKm })}</p>
+            ) : null}
+          </div>
+        </section>
+      )}
+
+      {/* 2c. Today or tomorrow */}
+      {fulfillment === 'delivery' && s?.nextDayEnabled && !dq?.tooFar && (
+        <section>
+          <h2 className="mb-2 font-bold">{t('co.when')}</h2>
+          <div className="grid grid-cols-2 gap-3">
+            <OptionCard
+              active={speed === 'same_day'}
+              onClick={() => setSpeed('same_day')}
+              icon=""
+              title={t('co.today')}
+              text={
+                dq?.freeByThreshold
+                  ? t('common.free')
+                  : dq?.sameDayFeeCents != null
+                    ? money(dq.sameDayFeeCents)
+                    : byDistance
+                      ? t('co.fee_after_pin')
+                      : money(s.deliveryFeeCents)
+              }
+              sub={byDistance ? t('co.today_text') : undefined}
+            />
+            <OptionCard
+              active={speed === 'next_day'}
+              onClick={() => setSpeed('next_day')}
+              icon=""
+              title={t('co.tomorrow')}
+              text={dq?.freeByThreshold ? t('common.free') : money(dq?.nextDayFeeCents ?? s.nextDayFeeCents)}
+              sub={t('co.tomorrow_text', { date: dayLabel(q?.nextDayDate) })}
+            />
+          </div>
+          {dq?.freeByThreshold && <p className="mt-2 text-sm font-semibold text-brand">{t('co.free_threshold_both')}</p>}
         </section>
       )}
 
@@ -308,9 +388,11 @@ export function Checkout() {
               <Row label={t('co.items', { n: lines.reduce((n, l) => n + l.quantity, 0) })} value={money(q.subtotalCents)} />
               {fulfillment === 'delivery' && (
                 <Row
-                  label={t('co.delivery_fee')}
+                  label={speed === 'next_day' && s?.nextDayEnabled ? t('co.delivery_fee_tomorrow') : t('co.delivery_fee')}
                   value={
-                    q.baseDeliveryFeeCents === 0 ? (
+                    q.delivery?.needsLocation ? (
+                      <span className="text-muted">{t('co.fee_after_pin')}</span>
+                    ) : q.baseDeliveryFeeCents === 0 ? (
                       t('common.free_caps')
                     ) : q.deliveryDiscountCents > 0 ? (
                       <span>
@@ -383,7 +465,23 @@ function Row({ label, value, tone }: { label: string; value: React.ReactNode; to
   );
 }
 
-function OptionCard({ active, disabled, onClick, icon, title, text }: { active: boolean; disabled?: boolean; onClick: () => void; icon: string; title: string; text: string }) {
+function OptionCard({
+  active,
+  disabled,
+  onClick,
+  icon,
+  title,
+  text,
+  sub,
+}: {
+  active: boolean;
+  disabled?: boolean;
+  onClick: () => void;
+  icon: string;
+  title: string;
+  text: string;
+  sub?: string;
+}) {
   return (
     <button
       disabled={disabled}
@@ -393,9 +491,10 @@ function OptionCard({ active, disabled, onClick, icon, title, text }: { active: 
       }}
       className={cx('flex flex-col items-start rounded-3xl bg-surface p-4 text-left ring-2 transition disabled:opacity-40', active ? 'ring-brand' : 'ring-line/60')}
     >
-      <span className="text-3xl">{icon}</span>
-      <span className="mt-2 font-bold">{title}</span>
-      <span className="text-sm text-muted">{text}</span>
+      {icon && <span className="mb-2 text-3xl">{icon}</span>}
+      <span className="font-bold">{title}</span>
+      <span className="text-sm font-semibold text-muted">{text}</span>
+      {sub && <span className="mt-0.5 text-xs text-muted">{sub}</span>}
     </button>
   );
 }

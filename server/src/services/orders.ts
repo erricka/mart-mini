@@ -22,6 +22,7 @@ import {
 } from '../db/schema.js';
 import { conflict, notFound } from '../lib/errors.js';
 import { formatMoney, orderCode } from '../lib/format.js';
+import { googleMapsDirections, googleMapsPin } from '../lib/geo.js';
 import { pick, tr, userLang, type Lang } from '../lib/i18n.js';
 import { applyPoints, syncMilestones } from './loyalty.js';
 import { esc, kickNotifications, notifyStaff, queueNotification } from './notifications.js';
@@ -80,11 +81,25 @@ export async function notifyStaffNewOrder(tx: Tx, orderId: number) {
           phone: esc(o.contactPhone),
         },
         lang,
-      ),
+      ) + deliveryLines(o, settings, lang),
     orderId: o.id,
     buttonText: (lang) => tr('n.btn_open_dashboard', {}, lang),
     buttonPath: `/admin/orders/${o.id}`,
   });
+}
+
+/** Staff alert extras for delivery: when to deliver and a map link for the driver. */
+function deliveryLines(o: Order, settings: ShopSettings, lang: Lang) {
+  if (o.fulfillmentType !== 'delivery') return '';
+  const lines: string[] = [];
+  if (o.deliverySpeed === 'next_day') lines.push(tr('n.staff_when_next_day', { date: o.deliveryDate ?? '' }, lang));
+  else if (o.deliverySpeed === 'same_day') lines.push(tr('n.staff_when_same_day', {}, lang));
+  if (o.deliveryLat != null && o.deliveryLng != null) {
+    const store = settings.storeLat != null && settings.storeLng != null ? { lat: settings.storeLat, lng: settings.storeLng } : null;
+    const url = googleMapsDirections(store, { lat: o.deliveryLat, lng: o.deliveryLng });
+    lines.push(tr('n.staff_map', { url: esc(url), km: o.deliveryDistanceKm ?? '?' }, lang));
+  }
+  return lines.length ? `\n${lines.join('\n')}` : '';
 }
 
 function customerMessage(order: Order, to: OrderStatus, settings: ShopSettings, lang: Lang, extra: { points?: number; reason?: string | null }) {
@@ -352,6 +367,8 @@ export function serializeOrderSummary(o: Order, itemCount?: number) {
     completedAt: o.completedAt,
     cancelledAt: o.cancelledAt,
     contactName: o.contactName,
+    deliverySpeed: o.deliverySpeed,
+    deliveryDate: o.deliveryDate,
   };
 }
 
@@ -380,6 +397,23 @@ export async function getOrderDetail(orderId: number, opts: { forUserId?: number
             city: order.city,
             postalCode: order.postalCode,
             instructions: order.addressInstructions,
+          }
+        : null,
+    delivery:
+      order.fulfillmentType === 'delivery'
+        ? {
+            speed: order.deliverySpeed,
+            date: order.deliveryDate,
+            distanceKm: order.deliveryDistanceKm,
+            pin: order.deliveryLat != null && order.deliveryLng != null ? { lat: order.deliveryLat, lng: order.deliveryLng } : null,
+            mapUrl: order.deliveryLat != null && order.deliveryLng != null ? googleMapsPin({ lat: order.deliveryLat, lng: order.deliveryLng }) : null,
+            directionsUrl:
+              order.deliveryLat != null && order.deliveryLng != null
+                ? googleMapsDirections(
+                    settings.storeLat != null && settings.storeLng != null ? { lat: settings.storeLat, lng: settings.storeLng } : null,
+                    { lat: order.deliveryLat, lng: order.deliveryLng },
+                  )
+                : null,
           }
         : null,
     pickup: order.fulfillmentType === 'pickup' ? { address: settings.pickupAddress, hours: settings.pickupHours } : null,

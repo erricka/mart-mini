@@ -97,3 +97,7 @@ button:disabled { cursor: not-allowed; }
 /* Chart palette (validated with the dataviz validator against the app surfaces, light + dark). */
 :root { --viz-1: #2a78d6; --viz-2: #eb6834; --viz-grid: #e8ece6; }
 .dark { --viz-1: #3987e5; --viz-2: #d95926; --viz-grid: #26322c; }
+
+/* Map: store marker */
+.map-store-marker { display: grid; place-items: center; width: 34px; height: 34px; border-radius: 9999px; background: #fff; box-shadow: 0 2px 8px rgb(0 0 0 / .25); font-size: 20px; }
+.leaflet-container { font: inherit; background: var(--color-surface-2, #eef2ec); }

@@ -204,6 +204,8 @@ async function insertBaseSettings(extra: Partial<typeof shopSettings.$inferInser
     rewardExpiryDays: 90,
     cashEnabled: true,
     qrPaymentMode: 'off',
+    // mart25's store — the server resolves this link to coordinates on start-up (see services/geo.ts).
+    storeMapsUrl: 'https://maps.app.goo.gl/1oWhhoUpnBVtErKN8',
     ...extra,
   }).where(eq(shopSettings.id, 1));
   await db.insert(levels).values(LEVELS).onConflictDoNothing();
@@ -250,7 +252,8 @@ export async function seedDemo() {
   }
 
   console.log('🌱 Seeding mart25 settings & catalog…');
-  await insertBaseSettings({ pickupAddress: 'ហាង mart25 — បញ្ជរសេវាអតិថិជន', supportPhone: '+855 12 345 678' });
+  // Demo pin in central Phnom Penh so the map and distance fees work locally without resolving the link.
+  await insertBaseSettings({ pickupAddress: 'ហាង mart25 — បញ្ជរសេវាអតិថិជន', supportPhone: '+855 12 345 678', storeLat: 11.5564, storeLng: 104.9282 });
 
   const productIds: Record<string, number> = {};
   let sort = 0;
@@ -348,6 +351,9 @@ export async function seedDemo() {
         contactName: `${user.firstName} ${user.lastName ?? ''}`.trim(),
         contactPhone: user.phone ?? '+85512000000',
         address: step.type === 'delivery' ? { ...addr, line1: streets[step.who] } : null,
+        // Pins scattered 1–6 km around the demo store; one in three customers is happy to wait until tomorrow.
+        location: step.type === 'delivery' ? { lat: 11.5564 + (rand() - 0.5) * 0.08, lng: 104.9282 + (rand() - 0.5) * 0.08 } : null,
+        deliverySpeed: step.type === 'delivery' && rand() < 0.33 ? 'next_day' : 'same_day',
         note: rand() < 0.25 ? choose(['សូមរើសផ្លែបឺរទុំៗ 🙏', 'ទុកនៅមុខទ្វារ', 'ទូរស័ព្ទមកពេលមកដល់', 'មិនប្រើថង់ប្លាស្ទិក']) : null,
       });
     } catch (err) {

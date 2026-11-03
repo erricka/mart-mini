@@ -3,6 +3,8 @@ import {
   bigint,
   boolean,
   check,
+  date,
+  doublePrecision,
   index,
   integer,
   pgEnum,
@@ -92,6 +94,9 @@ export const addresses = pgTable(
     city: text('city').notNull(),
     postalCode: text('postal_code'),
     instructions: text('instructions'),
+    /** Map pin chosen by the customer (used for the distance-based delivery fee). */
+    lat: doublePrecision('lat'),
+    lng: doublePrecision('lng'),
     isDefault: boolean('is_default').notNull().default(false),
     createdAt: createdAt(),
   },
@@ -179,6 +184,24 @@ export const shopSettings = pgTable(
     /** Free delivery when the merchandise subtotal reaches this amount. Null = never free. */
     freeDeliveryMinCents: integer('free_delivery_min_cents'),
     minOrderCents: integer('min_order_cents').notNull().default(0),
+    /**
+     * 'distance' = Grab-style fee from the store to the customer's map pin (falls back to the flat
+     * deliveryFeeCents while the store location is unknown); 'flat' = always deliveryFeeCents.
+     */
+    deliveryPricing: text('delivery_pricing').notNull().default('distance'),
+    storeLat: doublePrecision('store_lat'),
+    storeLng: doublePrecision('store_lng'),
+    /** Google Maps link for the store; resolved to storeLat/storeLng by the server. */
+    storeMapsUrl: text('store_maps_url'),
+    // Defaults follow Grab Cambodia's published motorbike rates (KHR 1,500 base, 1,000/km, 2,500 minimum) at ~4,000៛/$.
+    deliveryBaseCents: integer('delivery_base_cents').notNull().default(38),
+    deliveryPerKmCents: integer('delivery_per_km_cents').notNull().default(25),
+    deliveryMinFeeCents: integer('delivery_min_fee_cents').notNull().default(63),
+    /** Farthest delivery distance in km (road estimate). Null = no limit. */
+    deliveryMaxKm: integer('delivery_max_km').default(20),
+    /** "I can wait until tomorrow" option with its own flat fee (never more than the same-day fee). */
+    nextDayEnabled: boolean('next_day_enabled').notNull().default(true),
+    nextDayFeeCents: integer('next_day_fee_cents').notNull().default(200),
     pickupAddress: text('pickup_address').notNull().default(''),
     pickupHours: text('pickup_hours').notNull().default(''),
     supportPhone: text('support_phone').notNull().default(''),
@@ -334,6 +357,14 @@ export const orders = pgTable(
     city: text('city'),
     postalCode: text('postal_code'),
     addressInstructions: text('address_instructions'),
+    deliveryLat: doublePrecision('delivery_lat'),
+    deliveryLng: doublePrecision('delivery_lng'),
+    /** Estimated road distance from the store, in km. */
+    deliveryDistanceKm: doublePrecision('delivery_distance_km'),
+    /** 'same_day' or 'next_day' (delivery orders only). */
+    deliverySpeed: text('delivery_speed'),
+    /** Promised delivery date (Cambodia time) for next-day orders. */
+    deliveryDate: date('delivery_date', { mode: 'string' }),
     customerNote: text('customer_note'),
     cancelReason: text('cancel_reason'),
     cancelledBy: text('cancelled_by'),

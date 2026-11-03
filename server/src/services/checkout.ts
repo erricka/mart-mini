@@ -21,6 +21,7 @@ import {
 } from '../db/schema.js';
 import { badRequest, conflict, isUniqueViolation } from '../lib/errors.js';
 import { formatMoney, orderCode } from '../lib/format.js';
+import { cambodiaDate, type LatLng } from '../lib/geo.js';
 import { pick, tr, userLang } from '../lib/i18n.js';
 import { normalizePhone } from '../lib/phone.js';
 import { lockUser } from './loyalty.js';
@@ -29,11 +30,17 @@ import { notifyStaffNewOrder } from './orders.js';
 import { calculateQuote, type Quote } from './pricing.js';
 import { getLevels, getSettings, levelFor } from './settings.js';
 
+export const latLngSchema = z.object({ lat: z.number().min(-90).max(90), lng: z.number().min(-180).max(180) });
+
 export const cartSchema = z.object({
   items: z
     .array(z.object({ productId: z.number().int().positive(), quantity: z.number().int().min(1).max(99) }))
     .max(100),
   fulfillmentType: z.enum(['delivery', 'pickup']),
+  /** Customer's map pin for delivery (drives the distance-based fee). */
+  location: latLngSchema.optional().nullable(),
+  /** "same_day" (Grab-style fee) or "next_day" (I can wait until tomorrow). */
+  deliverySpeed: z.enum(['same_day', 'next_day']).optional().default('same_day'),
   couponCode: z.string().trim().max(40).optional().nullable(),
   customerRewardId: z.number().int().positive().optional().nullable(),
 });
@@ -45,6 +52,8 @@ export const addressInputSchema = z.object({
   city: z.string().trim().min(2, 'err.city_required').max(100),
   postalCode: z.string().trim().max(20).optional().nullable(),
   instructions: z.string().trim().max(300).optional().nullable(),
+  lat: z.number().min(-90).max(90).optional().nullable(),
+  lng: z.number().min(-180).max(180).optional().nullable(),
 });
 
 export const placeOrderSchema = cartSchema.extend({
@@ -114,6 +123,7 @@ function buildQuote(
   settings: Awaited<ReturnType<typeof getSettings>>,
   discount: ResolvedDiscount,
   multiplierPercent: number,
+  delivery: { destination: LatLng | null; requireLocation: boolean },
 ): Quote {
   const lines = input.items
     .filter((i) => productsById.has(i.productId))
@@ -128,6 +138,9 @@ function buildQuote(
     giftProduct: giftId ? (productsById.get(giftId) ?? null) : null,
     multiplierPercent,
     now: new Date(),
+    destination: delivery.destination,
+    deliverySpeed: input.deliverySpeed,
+    requireLocation: delivery.requireLocation,
   });
 }
 
@@ -142,7 +155,7 @@ export async function quoteCart(user: User, input: CartInput) {
   const byId = new Map(rows.map((p) => [p.id, { ...p, name: pick(p.name, p.nameEn) }]));
   if (discount.coupon) discount.coupon = { ...discount.coupon, title: pick(discount.coupon.title, discount.coupon.titleEn) };
   const level = levelFor(allLevels, user.pointsBalance).current;
-  const quote = buildQuote(input, byId, settings, discount, level.multiplierPercent);
+  const quote = buildQuote(input, byId, settings, discount, level.multiplierPercent, { destination: input.location ?? null, requireLocation: false });
   const missing = input.items.filter((i) => !byId.has(i.productId)).map((i) => i.productId);
   if (missing.length) quote.issues.push(tr('err.items_gone'));
   return {
@@ -152,6 +165,7 @@ export async function quoteCart(user: User, input: CartInput) {
     couponError: discount.error ?? quote.couponError,
     currency: settings.currency,
     level: { name: level.name, emoji: level.emoji, multiplierPercent: level.multiplierPercent },
+    nextDayDate: cambodiaDate(new Date(), 1),
   };
 }
 
@@ -189,9 +203,11 @@ export async function placeOrder(user: User, input: PlaceOrderInput): Promise<{ 
 
       const [settings, allLevels] = await Promise.all([getSettings(tx), getLevels(tx)]);
 
-      // 2) Delivery address (only for delivery).
+      // 2) Delivery address and map pin (only for delivery). The pin sent with the order wins;
+      //    otherwise the saved address's pin is used.
       let address: { line1: string; line2: string | null; city: string; postalCode: string | null; instructions: string | null } | null =
         null;
+      let destination: LatLng | null = input.location ?? null;
       if (input.fulfillmentType === 'delivery') {
         if (input.addressId) {
           const [a] = await tx
@@ -200,12 +216,22 @@ export async function placeOrder(user: User, input: PlaceOrderInput): Promise<{ 
             .where(and(eq(addresses.id, input.addressId), eq(addresses.userId, u.id)));
           if (!a) throw badRequest('address_not_found', tr('err.address_not_found'));
           address = a;
+          if (!destination && a.lat != null && a.lng != null) destination = { lat: a.lat, lng: a.lng };
+          // Remember a newly dropped / moved pin on the saved address for next time.
+          if (input.location && (a.lat !== input.location.lat || a.lng !== input.location.lng)) {
+            await tx.update(addresses).set({ lat: input.location.lat, lng: input.location.lng }).where(eq(addresses.id, a.id));
+          }
         } else if (input.address) {
           const a = input.address;
           address = { line1: a.line1, line2: a.line2 ?? null, city: a.city, postalCode: a.postalCode ?? null, instructions: a.instructions ?? null };
+          if (!destination && a.lat != null && a.lng != null) destination = { lat: a.lat, lng: a.lng };
           if (a.save) {
             const [{ n }] = await tx.select({ n: sql<number>`count(*)::int` }).from(addresses).where(eq(addresses.userId, u.id));
-            if (n < 10) await tx.insert(addresses).values({ userId: u.id, label: a.label || 'Home', ...address, isDefault: n === 0 });
+            if (n < 10) {
+              await tx
+                .insert(addresses)
+                .values({ userId: u.id, label: a.label || 'Home', ...address, lat: destination?.lat ?? null, lng: destination?.lng ?? null, isDefault: n === 0 });
+            }
           }
         } else {
           throw badRequest('address_required', tr('err.address_required'));
@@ -230,7 +256,7 @@ export async function placeOrder(user: User, input: PlaceOrderInput): Promise<{ 
       if (missing.length) throw conflict('product_unavailable', tr('err.items_gone'), { missing });
 
       const level = levelFor(allLevels, u.pointsBalance).current;
-      const quote = buildQuote(input, byId, settings, discount, level.multiplierPercent);
+      const quote = buildQuote(input, byId, settings, discount, level.multiplierPercent, { destination, requireLocation: true });
       if (!quote.canPlace) {
         throw conflict('cannot_place', quote.issues[0], { issues: quote.issues, lines: quote.lines.filter((l) => l.issue) });
       }
@@ -259,6 +285,11 @@ export async function placeOrder(user: User, input: PlaceOrderInput): Promise<{ 
           city: address?.city ?? null,
           postalCode: address?.postalCode ?? null,
           addressInstructions: address?.instructions ?? null,
+          deliveryLat: quote.delivery ? (destination?.lat ?? null) : null,
+          deliveryLng: quote.delivery ? (destination?.lng ?? null) : null,
+          deliveryDistanceKm: quote.delivery?.distanceKm ?? null,
+          deliverySpeed: quote.delivery?.speed ?? null,
+          deliveryDate: quote.delivery?.speed === 'next_day' ? cambodiaDate(now, 1) : null,
           customerNote: input.note || null,
           pointsEstimate: quote.pointsEstimate,
         })
@@ -341,7 +372,11 @@ export async function placeOrder(user: User, input: PlaceOrderInput): Promise<{ 
       // 9) Notifications (outbox): the customer and every staff member.
       const lang = userLang(u);
       const total = formatMoney(quote.totalCents, settings.currency, lang);
-      const how = tr(input.fulfillmentType === 'delivery' ? 'n.how_delivery' : 'n.how_pickup', {}, lang);
+      const how = tr(
+        input.fulfillmentType === 'pickup' ? 'n.how_pickup' : quote.delivery?.speed === 'next_day' ? 'n.how_delivery_next_day' : 'n.how_delivery',
+        {},
+        lang,
+      );
       await queueNotification(tx, {
         userId: u.id,
         chatId: u.telegramId,

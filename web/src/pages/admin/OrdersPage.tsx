@@ -4,7 +4,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import { ProductImage } from '../../components/ProductImage';
 import { Avatar, Badge, Button, Card, cx, EmptyState, ErrorState, Field, Input, Notice, PageLoader, Sheet, Skeleton, Textarea } from '../../components/ui';
 import { api, errorMessage } from '../../lib/api';
-import { dateTime, money, timeAgo } from '../../lib/format';
+import { dateTime, dayLabel, money, timeAgo } from '../../lib/format';
 import { translate, useT, type TKey } from '../../lib/i18n';
 import { PAYMENT_TONE, STATUS_META } from '../../lib/status';
 import { toast } from '../../lib/toast';
@@ -113,7 +113,14 @@ export function OrdersPage({ counts }: { counts?: { newCount: number; activeCoun
                         {o.hasNote ? t('ao.note_flag') : ''}
                       </div>
                     </td>
-                    <td className="whitespace-nowrap px-3 py-3">{o.fulfillmentType === 'delivery' ? `🚚 ${t('co.delivery')}` : `🏪 ${t('co.pickup')}`}</td>
+                    <td className="whitespace-nowrap px-3 py-3">
+                      {o.fulfillmentType === 'delivery' ? `🚚 ${t('co.delivery')}` : `🏪 ${t('co.pickup')}`}
+                      {o.deliverySpeed === 'next_day' && (
+                        <div className="text-xs font-bold text-sky-700 dark:text-sky-300">
+                          {t('ao.next_day')} · {dayLabel(o.deliveryDate)}
+                        </div>
+                      )}
+                    </td>
                     <td className="px-3 py-3">{o.itemCount}</td>
                     <td className="px-3 py-3 font-semibold">{money(o.totalCents)}</td>
                     <td className="px-3 py-3">
@@ -144,6 +151,11 @@ export function OrdersPage({ counts }: { counts?: { newCount: number; activeCoun
                   <div className="mt-1 text-sm">
                     {o.contactName} · {o.fulfillmentType === 'delivery' ? `🚚 ${o.city ?? ''}` : `🏪 ${t('co.pickup')}`} · {t('ao.items', { n: o.itemCount ?? 0 })}
                   </div>
+                  {o.deliverySpeed === 'next_day' && (
+                    <div className="mt-1 text-xs font-bold text-sky-700 dark:text-sky-300">
+                      {t('ao.next_day')} · {dayLabel(o.deliveryDate)}
+                    </div>
+                  )}
                   <div className="mt-1 flex items-center justify-between">
                     <span className="font-extrabold">{money(o.totalCents)}</span>
                     <Badge className={PAYMENT_TONE[o.paymentStatus]}>
@@ -378,9 +390,30 @@ export function OrderDetailPage() {
                   {o.address.city} {o.address.postalCode}
                 </div>
                 {o.address.instructions && <div className="mt-1 text-muted">{t('ao.directions', { text: o.address.instructions })}</div>}
-                <a className="mt-2 inline-block font-semibold text-brand" target="_blank" rel="noreferrer" href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent([o.address.line1, o.address.city].join(', '))}`}>
-                  {t('ao.open_maps')}
-                </a>
+                {o.delivery?.speed && (
+                  <div className={cx('mt-2 inline-block rounded-xl px-2.5 py-1 font-bold', o.delivery.speed === 'next_day' ? 'bg-sky-100 text-sky-800 dark:bg-sky-500/15 dark:text-sky-200' : 'bg-amber-100 text-amber-900 dark:bg-amber-500/15 dark:text-amber-200')}>
+                    {o.delivery.speed === 'next_day' ? t('ao.deliver_on', { date: dayLabel(o.delivery.date) }) : t('ao.deliver_today')}
+                  </div>
+                )}
+                {o.delivery?.distanceKm != null && <div className="mt-1 text-muted">{t('ao.km', { km: o.delivery.distanceKm })}</div>}
+                <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1">
+                  {o.delivery?.mapUrl ? (
+                    <>
+                      <a className="font-semibold text-brand" target="_blank" rel="noreferrer" href={o.delivery.mapUrl}>
+                        {t('ao.pin_map')}
+                      </a>
+                      {o.delivery.directionsUrl && (
+                        <a className="font-semibold text-brand" target="_blank" rel="noreferrer" href={o.delivery.directionsUrl}>
+                          {t('ao.route')}
+                        </a>
+                      )}
+                    </>
+                  ) : (
+                    <a className="font-semibold text-brand" target="_blank" rel="noreferrer" href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent([o.address.line1, o.address.city].join(', '))}`}>
+                      {t('ao.open_maps')}
+                    </a>
+                  )}
+                </div>
               </>
             ) : (
               <div className="text-muted">{t('ao.at', { place: o.pickup?.address ?? '' })}</div>

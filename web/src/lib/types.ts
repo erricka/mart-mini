@@ -20,6 +20,25 @@ export interface User {
   createdAt: string;
 }
 
+export interface LatLng {
+  lat: number;
+  lng: number;
+}
+
+export type DeliverySpeed = 'same_day' | 'next_day';
+
+export interface DeliveryInfo {
+  mode: 'flat' | 'distance';
+  speed: DeliverySpeed;
+  distanceKm: number | null;
+  needsLocation: boolean;
+  tooFar: boolean;
+  maxKm: number | null;
+  sameDayFeeCents: number | null;
+  nextDayFeeCents: number | null;
+  freeByThreshold: boolean;
+}
+
 export interface Shop {
   shopName: string;
   tagline: string;
@@ -29,6 +48,13 @@ export interface Shop {
   deliveryFeeCents: number;
   freeDeliveryMinCents: number | null;
   minOrderCents: number;
+  /** 'distance' only when the store pin is known. */
+  deliveryPricing: 'distance' | 'flat';
+  store: LatLng | null;
+  deliveryMinFeeCents: number;
+  deliveryMaxKm: number | null;
+  nextDayEnabled: boolean;
+  nextDayFeeCents: number;
   pickupAddress: string;
   pickupHours: string;
   supportPhone: string;
@@ -165,6 +191,8 @@ export interface Quote {
   pointsEstimate: number;
   freeDeliveryRemainingCents: number | null;
   minOrderRemainingCents: number;
+  delivery: DeliveryInfo | null;
+  nextDayDate: string;
   issues: string[];
   canPlace: boolean;
   missingProductIds: number[];
@@ -179,6 +207,8 @@ export interface Address {
   city: string;
   postalCode: string | null;
   instructions: string | null;
+  lat: number | null;
+  lng: number | null;
   isDefault: boolean;
 }
 
@@ -207,6 +237,8 @@ export interface OrderSummary {
   completedAt: string | null;
   cancelledAt: string | null;
   contactName: string;
+  deliverySpeed: DeliverySpeed | null;
+  deliveryDate: string | null;
   preview?: string[];
 }
 
@@ -218,6 +250,14 @@ export interface OrderDetail extends OrderSummary {
   contactPhone: string;
   address: { line1: string | null; line2: string | null; city: string | null; postalCode: string | null; instructions: string | null } | null;
   pickup: { address: string; hours: string } | null;
+  delivery: {
+    speed: DeliverySpeed | null;
+    date: string | null;
+    distanceKm: number | null;
+    pin: LatLng | null;
+    mapUrl: string | null;
+    directionsUrl: string | null;
+  } | null;
   customerNote: string | null;
   cancelReason: string | null;
   cancelledBy: string | null;

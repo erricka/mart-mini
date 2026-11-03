@@ -2,7 +2,7 @@
 
 A Telegram Mini App for the **mart25** supermarket. It has three parts:
 
-- **Customer shopping app:** QR-code entry, short onboarding with a **Khmer or English** language choice, catalog, cart, delivery or pickup, **cash payment**, and order tracking.
+- **Customer shopping app:** QR-code entry, short onboarding with a **Khmer or English** language choice, catalog, cart, **map-pin delivery priced by distance (or $2 if you can wait until tomorrow)** or pickup, **cash payment**, and order tracking.
 - **Loyalty game:** points, levels, milestone rewards, a welcome gift, badges and celebrations.
 - **Seller dashboard:** live orders, catalog and stock, loyalty setup, customers, insights and printable bilingual QR posters.
 
@@ -118,6 +118,14 @@ See **[docs/DEPLOY.md](docs/DEPLOY.md)**. In short:
 4. Open the bot and tap **🛒 ទិញទំនិញ**. Staff send `/dashboard`.
 
 Telegram notifications are real when `TELEGRAM_BOT_TOKEN` is set. Without it they're clearly marked **SIMULATED** (logged and shown on each order).
+
+## Delivery by distance (map)
+
+At checkout, delivery customers drop a pin on a map (**📍 Use my location** or move the map). The server prices delivery Grab-style from the store's location: base fare + per km on the road-distance estimate, with a minimum and a maximum distance. If the customer **can wait until tomorrow**, delivery is a flat **$2**. Staff get the pin, the distance and a route link. You set the store pin, the rates and the next-day fee in **Settings**. Details: [docs/DEPLOY.md → Delivery fee by distance](docs/DEPLOY.md#delivery-fee-by-distance-map).
+
+| Checkout: pin + today / tomorrow | Settings: store pin & rates |
+| --- | --- |
+| ![](docs/screenshots/checkout-map-km.png) | ![](docs/screenshots/dashboard-delivery-settings-km.png) |
 
 ## Adding products
 

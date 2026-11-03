@@ -9,16 +9,25 @@ import { cartSubtotal, useCart } from '../../lib/cart';
 import { money } from '../../lib/format';
 import { useT } from '../../lib/i18n';
 import { useShop } from '../../lib/queries';
-import type { Quote } from '../../lib/types';
+import type { DeliverySpeed, LatLng, Quote } from '../../lib/types';
 
-export function useCartQuote(fulfillmentType: 'delivery' | 'pickup', discount: { couponCode?: string | null; customerRewardId?: number | null } = {}) {
+export function useCartQuote(
+  fulfillmentType: 'delivery' | 'pickup',
+  discount: { couponCode?: string | null; customerRewardId?: number | null } = {},
+  delivery: { location?: LatLng | null; deliverySpeed?: DeliverySpeed } = {},
+) {
   const lines = useCart((s) => s.lines);
   const items = lines.map((l) => ({ productId: l.productId, quantity: l.quantity }));
+  const location = fulfillmentType === 'delivery' ? (delivery.location ?? null) : null;
+  const deliverySpeed = delivery.deliverySpeed ?? 'same_day';
   return useQuery({
-    queryKey: ['quote', items, fulfillmentType, discount.couponCode ?? null, discount.customerRewardId ?? null],
+    queryKey: ['quote', items, fulfillmentType, discount.couponCode ?? null, discount.customerRewardId ?? null, location?.lat, location?.lng, deliverySpeed],
     enabled: items.length > 0,
     placeholderData: (prev) => prev,
-    queryFn: () => api<{ quote: Quote; discounts: { wallet: any[]; publicCoupons: any[] } }>('/checkout/quote', { body: { items, fulfillmentType, ...discount } }),
+    queryFn: () =>
+      api<{ quote: Quote; discounts: { wallet: any[]; publicCoupons: any[] } }>('/checkout/quote', {
+        body: { items, fulfillmentType, ...discount, location, deliverySpeed },
+      }),
   });
 }
 

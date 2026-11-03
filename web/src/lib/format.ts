@@ -17,6 +17,17 @@ export const orderCode = (id: number) => `#${String(id).padStart(4, '0')}`;
 const KM_MONTHS = ['មករា', 'កុម្ភៈ', 'មីនា', 'មេសា', 'ឧសភា', 'មិថុនា', 'កក្កដា', 'សីហា', 'កញ្ញា', 'តុលា', 'វិច្ឆិកា', 'ធ្នូ'];
 const pad = (n: number) => String(n).padStart(2, '0');
 
+const KM_DAYS = ['អាទិត្យ', 'ចន្ទ', 'អង្គារ', 'ពុធ', 'ព្រហស្បតិ៍', 'សុក្រ', 'សៅរ៍'];
+
+/** A calendar day like "2026-11-04" → "ថ្ងៃពុធ 4 វិច្ឆិកា" / "Wed, 4 Nov". */
+export function dayLabel(ymd: string | null | undefined) {
+  if (!ymd) return '';
+  const [y, m, d] = ymd.split('-').map(Number);
+  const date = new Date(y, m - 1, d);
+  if (getLang() === 'km') return `ថ្ងៃ${KM_DAYS[date.getDay()]} ${d} ${KM_MONTHS[m - 1]}`;
+  return date.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' });
+}
+
 export function shortDate(iso: string | Date) {
   const d = new Date(iso);
   if (getLang() === 'km') return `${d.getDate()} ${KM_MONTHS[d.getMonth()]}`;

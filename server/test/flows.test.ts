@@ -415,3 +415,67 @@ describe('Bulk product import (Excel/CSV)', () => {
     expect((await call('POST', '/api/admin/products/import', c.token, { dryRun: true, rows })).status).toBe(403);
   });
 });
+
+describe('Map delivery: distance fee and "tomorrow" option', () => {
+  const STORE = { lat: 11.5564, lng: 104.9282 };
+  const north = (km: number) => ({ lat: STORE.lat + km / 111.2, lng: STORE.lng });
+  let token: string;
+  const address = { label: 'Home', line1: 'St 271, #12', city: 'Phnom Penh', save: true };
+
+  beforeAll(async () => {
+    await db.update(shopSettings).set({ storeLat: STORE.lat, storeLng: STORE.lng, deliveryPricing: 'distance' });
+    token = (await onboard({ id: 9900, first_name: 'Map' }, '+85512990990')).token;
+  });
+  afterAll(async () => {
+    await db.update(shopSettings).set({ storeLat: null, storeLng: null });
+  });
+
+  it('shows the store pin and asks for the customer pin before charging', async () => {
+    const shop = await call('GET', '/api/shop');
+    expect(shop.json).toMatchObject({ deliveryPricing: 'distance', store: STORE, nextDayEnabled: true, nextDayFeeCents: 200 });
+    const q = await call('POST', '/api/checkout/quote', token, { items: [{ productId: ids.apples, quantity: 2 }], fulfillmentType: 'delivery' });
+    expect(q.json.quote.delivery.needsLocation).toBe(true);
+    const priced = await call('POST', '/api/checkout/quote', token, { items: [{ productId: ids.apples, quantity: 2 }], fulfillmentType: 'delivery', location: north(6) });
+    expect(priced.json.quote.delivery).toMatchObject({ distanceKm: 7.8, sameDayFeeCents: 235, nextDayFeeCents: 200 });
+    expect(priced.json.quote.nextDayDate).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+  });
+
+  it('refuses delivery without a pin', async () => {
+    const r = await order(token, { fulfillmentType: 'delivery', address });
+    expect(r.status).toBe(409);
+  });
+
+  it('places a next-day order for $2, saves the pin, and gives staff a map link', async () => {
+    const r = await order(token, { fulfillmentType: 'delivery', address, location: north(6), deliverySpeed: 'next_day' });
+    expect(r.status).toBe(201);
+    expect(r.json.order.deliveryFeeCents).toBe(200);
+    expect(r.json.order.delivery).toMatchObject({ speed: 'next_day', distanceKm: 7.8 });
+    expect(r.json.order.delivery.directionsUrl).toContain(`origin=${STORE.lat},${STORE.lng}`);
+    const [row] = await db.select().from(orders).where(eq(orders.id, r.json.order.id));
+    const tomorrow = new Date(Date.now() + 7 * 3_600_000 + 86_400_000).toISOString().slice(0, 10);
+    expect(row.deliveryDate).toBe(tomorrow);
+    const staff = await db.select().from(notifications).where(sql`${notifications.orderId} = ${row.id} and ${notifications.kind} = 'staff_new_order'`);
+    expect(staff[0].text).toContain('google.com/maps/dir');
+    expect(staff[0].text).toContain(tomorrow);
+
+    // The saved address keeps the pin, so the next order needs no map tap.
+    const saved = await call('GET', '/api/me/addresses', token);
+    expect(saved.json.addresses[0]).toMatchObject({ lat: north(6).lat, lng: north(6).lng });
+    const again = await order(token, { fulfillmentType: 'delivery', addressId: saved.json.addresses[0].id });
+    expect(again.status).toBe(201);
+    expect(again.json.order.deliveryFeeCents).toBe(235);
+    expect(again.json.order.delivery.speed).toBe('same_day');
+  });
+
+  it('refuses pins beyond the delivery limit', async () => {
+    const r = await order(token, { fulfillmentType: 'delivery', address: { ...address, save: false }, location: north(18) });
+    expect(r.status).toBe(409);
+  });
+
+  it('lets admins turn a pasted link or coordinates into the store pin', async () => {
+    const ok = await call('POST', '/api/admin/settings/locate', adminToken, { input: '11.5701, 104.9105' });
+    expect(ok.json.pin).toEqual({ lat: 11.5701, lng: 104.9105 });
+    expect((await call('POST', '/api/admin/settings/locate', adminToken, { input: 'somewhere nice' })).status).toBe(400);
+    expect((await call('POST', '/api/admin/settings/locate', token, { input: '11.5, 104.9' })).status).toBe(403);
+  });
+});

@@ -4,6 +4,7 @@ import { pool } from './db/client.js';
 import { runMigrations } from './db/migrate.js';
 import { seedStarter } from './db/seed.js';
 import { configureBot } from './services/bot.js';
+import { ensureStoreLocation } from './services/settings.js';
 import { dispatchPending, startNotificationWorker } from './services/notifications.js';
 
 if (config.MIGRATE_ON_START) await runMigrations();
@@ -17,6 +18,8 @@ const stopBot = await configureBot(app.log).catch((err) => {
   return () => {};
 });
 void dispatchPending();
+// Reads the store's Google Maps link into a pin the first time (needs internet; never blocks start-up).
+void ensureStoreLocation(app.log);
 
 await app.listen({ port: config.PORT, host: config.HOST });
 app.log.info(

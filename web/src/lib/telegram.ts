@@ -20,6 +20,16 @@ interface TgWebApp {
   openTelegramLink?(url: string): void;
   requestWriteAccess?(cb?: (granted: boolean) => void): void;
   BackButton?: { show(): void; hide(): void; onClick(cb: () => void): void; offClick(cb: () => void): void };
+  /** Bot API 8.0+: GPS through Telegram (asks the user for permission). */
+  LocationManager?: {
+    isInited: boolean;
+    isLocationAvailable: boolean;
+    isAccessRequested: boolean;
+    isAccessGranted: boolean;
+    init(cb?: () => void): void;
+    getLocation(cb: (data: { latitude: number; longitude: number } | null) => void): void;
+    openSettings(): void;
+  };
   HapticFeedback?: {
     impactOccurred(s: 'light' | 'medium' | 'heavy' | 'rigid' | 'soft'): void;
     notificationOccurred(t: 'error' | 'success' | 'warning'): void;
@@ -141,4 +151,34 @@ export function requestBotMessages(): Promise<boolean> {
       resolve(false);
     }
   });
+}
+
+/**
+ * The customer's current position: Telegram's LocationManager inside Telegram (8.0+), otherwise the
+ * browser's geolocation. Resolves null when unavailable or refused.
+ */
+export function getCurrentLocation(): Promise<{ lat: number; lng: number } | null> {
+  const lm = tg?.LocationManager;
+  if (inTelegram && lm && tg!.isVersionAtLeast('8.0')) {
+    return new Promise((resolve) => {
+      const ask = () => {
+        if (!lm.isLocationAvailable) return resolve(browserLocation());
+        lm.getLocation((d) => resolve(d ? { lat: d.latitude, lng: d.longitude } : null));
+      };
+      if (lm.isInited) ask();
+      else lm.init(ask);
+    });
+  }
+  return browserLocation();
+}
+
+function browserLocation(): Promise<{ lat: number; lng: number } | null> {
+  if (typeof navigator === 'undefined' || !navigator.geolocation) return Promise.resolve(null);
+  return new Promise((resolve) =>
+    navigator.geolocation.getCurrentPosition(
+      (p) => resolve({ lat: p.coords.latitude, lng: p.coords.longitude }),
+      () => resolve(null),
+      { enableHighAccuracy: true, timeout: 12_000, maximumAge: 60_000 },
+    ),
+  );
 }

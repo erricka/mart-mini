@@ -5,7 +5,7 @@ import { ProductImage } from '../../components/ProductImage';
 import { Timeline } from '../../components/Timeline';
 import { Badge, Button, Card, celebrate, ErrorState, Field, PageLoader, Sheet, Textarea } from '../../components/ui';
 import { api, errorMessage } from '../../lib/api';
-import { dateTime, money } from '../../lib/format';
+import { dateTime, dayLabel, money } from '../../lib/format';
 import { useOrder } from '../../lib/queries';
 import { useT } from '../../lib/i18n';
 import { PAYMENT_TONE, STATUS_META } from '../../lib/status';
@@ -111,6 +111,12 @@ export function OrderPage() {
             <div className="font-semibold">{[o.address.line1, o.address.line2].filter(Boolean).join(', ')}</div>
             <div className="text-muted">{o.address.city}</div>
             {o.address.instructions && <div className="text-muted">“{o.address.instructions}”</div>}
+            {o.delivery?.speed && (
+              <div className="pt-1 font-semibold">
+                {o.delivery.speed === 'next_day' ? t('order.deliver_tomorrow', { date: dayLabel(o.delivery.date) }) : t('order.deliver_today')}
+              </div>
+            )}
+            {o.delivery?.distanceKm != null && <div className="text-muted">{t('order.km', { km: o.delivery.distanceKm })}</div>}
           </>
         ) : (
           <>

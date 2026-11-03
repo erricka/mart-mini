@@ -117,9 +117,10 @@ You can now open **`https://t.me/<your_bot>?startapp=store`**, which is what the
 
 1. **ការកំណត់ (Settings):**
    - support phone, pickup address and hours
-   - delivery fee, free-delivery threshold, minimum order
+   - free-delivery threshold, minimum order
    - currency (USD or KHR)
    - tagline in Khmer, with optional English
+   - **🛵 Delivery fee & store location:** check that the 🏪 pin is on your shop (see *Delivery fee by distance* below)
 
    The shop name is already **mart25**. Payments are **cash only** (see *Payments* below).
 2. **ទំនិញ (Catalog): add your products.** The catalog starts empty. The 9 aisles already exist, in Khmer and English. There are two buttons at the top right of the page:
@@ -167,6 +168,30 @@ You can now open **`https://t.me/<your_bot>?startapp=store`**, which is what the
 **Updating prices or stock in bulk:** upload the same sheet again with new numbers. A row whose **barcode/SKU** (or, without a barcode, the same **Khmer name**) already exists updates that product instead of adding a duplicate. Empty cells leave the current value unchanged. Stock changes are recorded in the stock history as "Import (row N)".
 
 **Photos:** after importing, open a product → **កែប្រែ (Edit) → 📷 ផ្ទុករូបថត (Upload photo)**. Or put photo links in `image_url` before importing.
+
+## Delivery fee by distance (map)
+
+At checkout, customers choosing delivery **drop a pin on a map**: they move the map until the pin is on their door, or tap **📍 ប្រើទីតាំងខ្ញុំ (Use my location)**. The fee is worked out on the server from the distance between your store and that pin.
+
+- **Today (⚡ ថ្ងៃនេះ):** Grab-style price: **base fare + price per km**, never below a **minimum fee**, rounded up to 5¢ (or 100៛). The distance is the straight line × 1.3, which approximates the road distance.
+- **Tomorrow (📅 ថ្ងៃស្អែក):** if the customer can wait until the next day, a flat **$2.00**. It's never more than the same-day price.
+- Spending above the **free-delivery threshold** makes either option free, and free-delivery rewards also apply.
+- Pins farther than the **farthest delivery** distance (20 km by default) can't order delivery. Those customers are asked to choose pickup.
+
+**Default prices.** Grab doesn't publish a delivery rate card for Cambodia, so the defaults use Grab's published GrabBike rates: **៛1,500 base, ៛1,000 per km, ៛2,500 minimum**, about $0.38, $0.25 and $0.63. That gives roughly:
+
+| Distance | 1 km | 3 km | 5 km | 10 km |
+| --- | --- | --- | --- | --- |
+| Today | $0.65 | $1.15 | $1.65 | $2.90 |
+| Tomorrow | $0.65 | $1.15 | $1.65 | $2.00 |
+
+You can change every number in **Dashboard → ការកំណត់ (Settings) → 🛵 Delivery fee & store location**. The example table updates as you type. To match Grab exactly, get a few quotes in the Grab app from your shop to nearby areas and adjust.
+
+**Store location.** The server reads mart25's Google Maps link (`https://maps.app.goo.gl/1oWhhoUpnBVtErKN8`) on start-up and places the 🏪 pin. The log shows `📍 Store location set from the Maps link`. Check it in Settings and **Save**. To move it: drag the map, or paste a Google Maps link (in Google Maps: **Share → Copy link**) or coordinates like `11.5564, 104.9282`, then tap **ស្វែងរក (Find)**. Until a pin is set, delivery uses the flat **delivery fee**.
+
+**For staff.** New-order Telegram alerts say ⚡ *today* or 📅 *tomorrow* (with the date), the distance, and an **Open map** link with the route from the store. In the dashboard, next-day orders are marked **📅 ថ្ងៃស្អែក** in the order list, and the order page has **📍 Exact pin** and **🧭 Route from store** buttons.
+
+**Map tiles.** The map uses free [OpenStreetMap](https://www.openstreetmap.org/copyright) tiles, with no API key and no bill. That's fine for a shop's traffic. A very busy app should switch to a paid tile provider.
 
 ## Payments
 

@@ -35,6 +35,16 @@ export interface Settings {
   signupBonusPoints: number;
   welcomeCouponId: number | null;
   rewardExpiryDays: number | null;
+  deliveryPricing: 'distance' | 'flat';
+  storeLat: number | null;
+  storeLng: number | null;
+  storeMapsUrl: string | null;
+  deliveryBaseCents: number;
+  deliveryPerKmCents: number;
+  deliveryMinFeeCents: number;
+  deliveryMaxKm: number | null;
+  nextDayEnabled: boolean;
+  nextDayFeeCents: number;
 }
 
 export interface AdminCoupon {
@@ -86,6 +96,8 @@ export const useLoyalty = () => useQuery({ queryKey: ['admin', 'loyalty'], query
 const SETTINGS_KEYS: (keyof Settings)[] = [
   'shopName', 'tagline', 'taglineEn', 'currency', 'deliveryEnabled', 'pickupEnabled', 'deliveryFeeCents', 'freeDeliveryMinCents',
   'minOrderCents', 'pickupAddress', 'pickupHours', 'supportPhone', 'pointsPerDollar', 'signupBonusPoints', 'welcomeCouponId', 'rewardExpiryDays',
+  'deliveryPricing', 'storeLat', 'storeLng', 'storeMapsUrl', 'deliveryBaseCents', 'deliveryPerKmCents', 'deliveryMinFeeCents', 'deliveryMaxKm',
+  'nextDayEnabled', 'nextDayFeeCents',
 ];
 
 /** Only the editable fields (the API rejects unknown ones such as reserved payment columns). */

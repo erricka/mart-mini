@@ -139,6 +139,13 @@ export async function publicRoutes(app: FastifyInstance) {
       pickupEnabled: s.pickupEnabled,
       deliveryFeeCents: s.deliveryFeeCents,
       freeDeliveryMinCents: s.freeDeliveryMinCents,
+      // Distance pricing: the store pin is public (it's the shop), so the map can centre on it.
+      deliveryPricing: s.deliveryPricing === 'distance' && s.storeLat != null && s.storeLng != null ? 'distance' : 'flat',
+      store: s.storeLat != null && s.storeLng != null ? { lat: s.storeLat, lng: s.storeLng } : null,
+      deliveryMinFeeCents: s.deliveryMinFeeCents,
+      deliveryMaxKm: s.deliveryMaxKm,
+      nextDayEnabled: s.nextDayEnabled,
+      nextDayFeeCents: s.nextDayFeeCents,
       minOrderCents: s.minOrderCents,
       pickupAddress: s.pickupAddress,
       pickupHours: s.pickupHours,

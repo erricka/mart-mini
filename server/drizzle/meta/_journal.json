@@ -22,6 +22,13 @@
       "when": 1793604340538,
       "tag": "0002_product_sku",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1793686833073,
+      "tag": "0003_delivery_map",
+      "breakpoints": true
     }
   ]
 }

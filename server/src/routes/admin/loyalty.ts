@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { db } from '../../db/client.js';
 import { coupons, levels, products, rewards, shopSettings } from '../../db/schema.js';
 import { badRequest, isUniqueViolation, notFound } from '../../lib/errors.js';
+import { resolveMapsLink } from '../../lib/geo.js';
 import { tr } from '../../lib/i18n.js';
 import { idParam, parse } from '../../lib/validate.js';
 import { makeGuards } from '../../plugins/auth.js';
@@ -27,6 +28,17 @@ const settingsInput = z.object({
   signupBonusPoints: z.number().int().min(0).max(10_000),
   welcomeCouponId: z.number().int().positive().nullable(),
   rewardExpiryDays: z.number().int().min(1).max(3650).nullable(),
+  // Delivery by distance (all optional so older dashboards keep working).
+  deliveryPricing: z.enum(['distance', 'flat']).optional(),
+  storeLat: z.number().min(-90).max(90).nullable().optional(),
+  storeLng: z.number().min(-180).max(180).nullable().optional(),
+  storeMapsUrl: z.string().trim().max(500).nullable().optional(),
+  deliveryBaseCents: z.number().int().min(0).max(10_000_000).optional(),
+  deliveryPerKmCents: z.number().int().min(0).max(10_000_000).optional(),
+  deliveryMinFeeCents: z.number().int().min(0).max(10_000_000).optional(),
+  deliveryMaxKm: z.number().int().min(1).max(500).nullable().optional(),
+  nextDayEnabled: z.boolean().optional(),
+  nextDayFeeCents: z.number().int().min(0).max(10_000_000).optional(),
 });
 
 const benefitInput = z
@@ -142,8 +154,21 @@ export async function adminLoyaltyRoutes(app: FastifyInstance) {
       if (!c) throw badRequest('bad_coupon', tr('err.welcome_coupon'));
     }
     await getSettings();
-    const [s] = await db.update(shopSettings).set({ ...body, taglineEn: body.taglineEn || null, updatedAt: new Date() }).where(eq(shopSettings.id, 1)).returning();
+    if ((body.storeLat == null) !== (body.storeLng == null)) throw badRequest('bad_location', tr('err.location_lookup'));
+    const [s] = await db
+      .update(shopSettings)
+      .set({ ...body, taglineEn: body.taglineEn || null, storeMapsUrl: body.storeMapsUrl === undefined ? undefined : body.storeMapsUrl || null, updatedAt: new Date() })
+      .where(eq(shopSettings.id, 1))
+      .returning();
     return { settings: s };
+  });
+
+  /** Turns a pasted Google Maps link (or "lat, lng") into a pin for the store-location map. */
+  app.post('/settings/locate', { preHandler: guard.admin }, async (req) => {
+    const { input } = parse(z.object({ input: z.string().trim().min(3).max(500) }), req.body);
+    const pin = await resolveMapsLink(input).catch(() => null);
+    if (!pin) throw badRequest('location_not_found', tr('err.location_lookup'));
+    return { pin };
   });
 
   app.put('/levels', { preHandler: guard.admin }, async (req) => {

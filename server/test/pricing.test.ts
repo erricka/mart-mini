@@ -9,6 +9,15 @@ const settings: PricingSettings = {
   freeDeliveryMinCents: 3500,
   minOrderCents: 1000,
   pointsPerDollar: 1,
+  deliveryPricing: 'flat',
+  storeLat: null,
+  storeLng: null,
+  deliveryBaseCents: 38,
+  deliveryPerKmCents: 25,
+  deliveryMinFeeCents: 63,
+  deliveryMaxKm: 20,
+  nextDayEnabled: true,
+  nextDayFeeCents: 200,
 };
 const product = (id: number, priceCents: number, stock = 10, active = true): PricingProduct => ({
   id, name: `P${id}`, unit: '', emoji: '🛒', imageUrl: null, priceCents, stock, active,
