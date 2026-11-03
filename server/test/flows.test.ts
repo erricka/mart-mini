@@ -479,3 +479,27 @@ describe('Map delivery: distance fee and "tomorrow" option', () => {
     expect((await call('POST', '/api/admin/settings/locate', token, { input: '11.5, 104.9' })).status).toBe(403);
   });
 });
+
+describe('Google Maps support', () => {
+  it('reports no maps key when none is configured (the app then uses OpenStreetMap)', async () => {
+    expect((await call('GET', '/api/shop')).json.mapsApiKey).toBeNull();
+  });
+
+  it('accepts browser CSP violation reports', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/csp-report',
+      headers: { 'content-type': 'application/csp-report' },
+      payload: JSON.stringify({ 'csp-report': { 'blocked-uri': 'https://maps.googleapis.com/x', 'violated-directive': 'script-src' } }),
+    });
+    expect(res.statusCode).toBe(204);
+  });
+
+  it('allows the Google Maps hosts in the Content-Security-Policy', async () => {
+    const res = await app.inject({ method: 'GET', url: '/api/health' });
+    const csp = String(res.headers['content-security-policy']);
+    expect(csp).toMatch(/script-src[^;]*https:\/\/\*\.googleapis\.com/);
+    expect(csp).toMatch(/connect-src[^;]*https:\/\/\*\.googleapis\.com/);
+    expect(csp).toContain('report-uri /api/csp-report');
+  });
+});

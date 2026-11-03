@@ -146,6 +146,8 @@ export async function publicRoutes(app: FastifyInstance) {
       deliveryMaxKm: s.deliveryMaxKm,
       nextDayEnabled: s.nextDayEnabled,
       nextDayFeeCents: s.nextDayFeeCents,
+      // Browser key (restricted to this site in Google Cloud). Null → OpenStreetMap without address auto-fill.
+      mapsApiKey: config.GOOGLE_MAPS_API_KEY || null,
       minOrderCents: s.minOrderCents,
       pickupAddress: s.pickupAddress,
       pickupHours: s.pickupHours,

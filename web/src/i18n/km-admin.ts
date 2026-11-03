@@ -461,4 +461,6 @@ export const kmAdmin: Record<keyof typeof enAdmin, string> = {
   'as.dm_next_day_fee': 'ថ្លៃដឹកថ្ងៃស្អែក',
   'as.dm_next_day_hint': 'ថ្លៃថេរសម្រាប់ដឹកថ្ងៃបន្ទាប់ — មិនលើសថ្លៃដឹកក្នុងថ្ងៃ។',
   'as.dm_flat_hint': 'ប្រើពេលមិនគិតតាមចម្ងាយ ឬរហូតដល់កំណត់ទីតាំងហាង។',
+  'as.dm_google_on': '🗺️ Google Maps កំពុងដំណើរការ — អាសយដ្ឋានអតិថិជនបំពេញដោយស្វ័យប្រវត្តិពីម្ជុល។',
+  'as.dm_google_off': '🗺️ កំពុងប្រើផែនទី OpenStreetMap ឥតគិតថ្លៃ។ បន្ថែមកូនសោ Google Maps (GOOGLE_MAPS_API_KEY ក្នុង Render → Environment) ដើម្បីប្តូរទៅ Google Maps ដែលបំពេញអាសយដ្ឋានដោយស្វ័យប្រវត្តិ។',
 };

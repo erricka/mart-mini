@@ -191,7 +191,27 @@ You can change every number in **Dashboard → ការកំណត់ (Setting
 
 **For staff.** New-order Telegram alerts say ⚡ *today* or 📅 *tomorrow* (with the date), the distance, and an **Open map** link with the route from the store. In the dashboard, next-day orders are marked **📅 ថ្ងៃស្អែក** in the order list, and the order page has **📍 Exact pin** and **🧭 Route from store** buttons.
 
-**Map tiles.** The map uses free [OpenStreetMap](https://www.openstreetmap.org/copyright) tiles, with no API key and no bill. That's fine for a shop's traffic. A very busy app should switch to a paid tile provider.
+**Which map.** With a Google Maps key (next section), customers get **Google Maps**, and moving the pin **fills in the address automatically**: street, sangkat, khan and city. They add their house number or floor. Without a key, or if Google can't load, the app uses the free [OpenStreetMap](https://www.openstreetmap.org/copyright) map. That map has no auto-fill and no bill. Dashboard → Settings shows which one is active.
+
+## Google Maps (address auto-fill)
+
+About 10 minutes. Google requires a billing account, but a small shop normally stays inside the free monthly usage. Since March 2025 that is 10,000 map loads and 10,000 address look-ups per month. Check [Google Maps Platform pricing](https://mapsplatform.google.com/pricing/) for current numbers.
+
+1. **Create a project:** [console.cloud.google.com/projectcreate](https://console.cloud.google.com/projectcreate), and name it e.g. *mart25*.
+2. **Turn on billing:** [console.cloud.google.com/billing](https://console.cloud.google.com/billing). Link a billing account to the project.
+3. **Enable the two APIs** (open each, choose your project, click **Enable**):
+   - [Maps JavaScript API](https://console.cloud.google.com/apis/library/maps-backend.googleapis.com)
+   - [Geocoding API](https://console.cloud.google.com/apis/library/geocoding-backend.googleapis.com)
+4. **Create the key:** [console.cloud.google.com/apis/credentials](https://console.cloud.google.com/apis/credentials) → **Create credentials → API key**. Then edit it:
+   - **Application restrictions → Websites:** add `https://mart25.onrender.com/*`. Add your own domain too if you set one up later.
+   - **API restrictions → Restrict key:** tick **Maps JavaScript API** and **Geocoding API**.
+   - **Save.**
+5. **Add it to Render:** service **mart25 → Environment → Add environment variable**. Set `GOOGLE_MAPS_API_KEY` to the key, then **Save**. Render restarts the app.
+6. **Check:** Dashboard → Settings → 🛵 should say *"Google Maps is on"*. In Telegram, start a delivery order and move the pin: the street and city fill in.
+
+**Avoid surprise bills (recommended):** set a [budget alert](https://console.cloud.google.com/billing/budgets), e.g. $5. You can also cap the Geocoding API's **requests per day** under *APIs & Services → Geocoding API → Quotas*. The app only looks up the address after the map stops moving, and not again for tiny nudges.
+
+This key is a *browser* key. It's visible in the page by design, and the website restriction from step 4 is what protects it. If the checkout still shows the OpenStreetMap map after you add the key, Google rejected it for this site. Check the restriction in step 4. The server log also reports any blocked Google requests (`CSP violation`).
 
 ## Payments
 

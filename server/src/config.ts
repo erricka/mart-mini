@@ -35,6 +35,11 @@ const schema = z.object({
 
   TELEGRAM_BOT_TOKEN: z.string().optional().default(''),
   TELEGRAM_BOT_USERNAME: z.string().optional().default(''),
+  /**
+   * Google Maps browser key (Maps JavaScript API + Geocoding API), restricted to your site's URL in
+   * Google Cloud. Empty = the free OpenStreetMap map without address auto-fill.
+   */
+  GOOGLE_MAPS_API_KEY: z.string().trim().optional().default(''),
   TELEGRAM_MINIAPP_SHORT_NAME: z.string().optional().default(''),
   TELEGRAM_BOT_MODE: z.enum(['off', 'polling', 'webhook']).default('off'),
   TELEGRAM_WEBHOOK_SECRET: z.string().optional().default(''),

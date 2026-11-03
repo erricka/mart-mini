@@ -55,6 +55,8 @@ export interface Shop {
   deliveryMaxKm: number | null;
   nextDayEnabled: boolean;
   nextDayFeeCents: number;
+  /** Google Maps browser key; null → OpenStreetMap without address auto-fill. */
+  mapsApiKey: string | null;
   pickupAddress: string;
   pickupHours: string;
   supportPhone: string;

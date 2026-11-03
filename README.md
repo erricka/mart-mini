@@ -121,7 +121,7 @@ Telegram notifications are real when `TELEGRAM_BOT_TOKEN` is set. Without it the
 
 ## Delivery by distance (map)
 
-At checkout, delivery customers drop a pin on a map (**📍 Use my location** or move the map). The server prices delivery by distance from the store's location: base fare + per km on the road-distance estimate, with a minimum and a maximum distance. If the customer **can wait until tomorrow**, delivery is a flat **$2**. Staff get the pin, the distance and a route link. You set the store pin, the rates and the next-day fee in **Settings**. Details: [docs/DEPLOY.md → Delivery fee by distance](docs/DEPLOY.md#delivery-fee-by-distance-map).
+At checkout, delivery customers drop a pin on a map (**📍 Use my location** or move the map). With a Google Maps key the map is Google Maps and **the address fills in automatically from the pin**; without one it's OpenStreetMap. The server prices delivery by distance from the store's location: base fare + per km on the road-distance estimate, with a minimum and a maximum distance. If the customer **can wait until tomorrow**, delivery is a flat **$2**. Staff get the pin, the distance and a route link. You set the store pin, the rates and the next-day fee in **Settings**. Details: [docs/DEPLOY.md → Delivery fee by distance](docs/DEPLOY.md#delivery-fee-by-distance-map).
 
 | Checkout: pin + today / tomorrow | Settings: store pin & rates |
 | --- | --- |

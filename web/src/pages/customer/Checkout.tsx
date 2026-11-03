@@ -12,6 +12,8 @@ import { canRequestContact, haptic, requestTelegramContact } from '../../lib/tel
 import { toast } from '../../lib/toast';
 import type { CouponInfo, DeliverySpeed, LatLng, OrderDetail, User, WalletItem } from '../../lib/types';
 import { useCartQuote } from './Cart';
+import { metresBetween } from '../../components/maps/shared';
+import type { GeoAddress } from '../../lib/googleMaps';
 
 const MapPicker = lazy(() => import('../../components/MapPicker'));
 
@@ -55,6 +57,8 @@ export function Checkout() {
   /** Customer's map pin (distance pricing) and "today / tomorrow" choice. */
   const [pin, setPin] = useState<LatLng | null>(null);
   const [speed, setSpeed] = useState<DeliverySpeed>('same_day');
+  const [filledFromMap, setFilledFromMap] = useState(false);
+  const [movedToNew, setMovedToNew] = useState(false);
   // Set synchronously on success so clearing the cart doesn't trigger the empty-cart redirect.
   const placed = useRef(false);
 
@@ -142,6 +146,29 @@ export function Checkout() {
 
   const s = shop.data;
   const byDistance = s?.deliveryPricing === 'distance';
+  const showMap = byDistance || !!s?.mapsApiKey;
+
+  const startNewAddress = () => {
+    setAddingAddress(true);
+    setMovedToNew(false);
+    setFilledFromMap(false);
+    setNewAddress({ line1: '', line2: '', city: '', instructions: '' });
+  };
+  // Moving the pin well away from the chosen saved address means a different place: start a new address.
+  const onPinChange = (p: LatLng) => {
+    setPin(p);
+    const saved = addingAddress ? null : addresses.data?.find((a) => a.id === addressId);
+    if (saved && saved.lat != null && saved.lng != null && metresBetween({ lat: saved.lat, lng: saved.lng }, p) > 200) {
+      startNewAddress();
+      setMovedToNew(true);
+    }
+  };
+  // Google Maps: the street under the pin fills the new-address form (the customer adds house no. / floor).
+  const onMapAddress = (a: GeoAddress) => {
+    if (!addingAddress) return;
+    setNewAddress((n) => ({ ...n, line1: a.line1 || n.line1, city: a.city || n.city }));
+    setFilledFromMap(true);
+  };
   const dq = fulfillment === 'delivery' ? q?.delivery : null;
   const addressReady = addingAddress ? newAddress.line1.trim().length >= 3 && newAddress.city.trim().length >= 2 : addressId != null;
   const deliveryReady = fulfillment === 'pickup' || (addressReady && (!byDistance || (pin != null && !dq?.tooFar)));
@@ -186,14 +213,14 @@ export function Checkout() {
         )}
       </section>
 
-      {/* 2. Address — only for delivery */}
+      {/* 2. Address + map pin — only for delivery. Moving the pin fills in the address (Google Maps). */}
       {fulfillment === 'delivery' && (
-        <section>
-          <h2 className="mb-2 font-bold">{t('co.address')}</h2>
+        <section className="space-y-2">
+          <h2 className="font-bold">{t('co.address')}</h2>
           {addresses.isLoading ? (
             <Skeleton className="h-20" />
           ) : (
-            <div className="space-y-2">
+            <>
               {!addingAddress &&
                 addresses.data?.map((a) => (
                   <button
@@ -209,8 +236,37 @@ export function Checkout() {
                     {addressId === a.id && <span className="text-brand">●</span>}
                   </button>
                 ))}
-              {addingAddress ? (
+              {!addingAddress && (
+                <button className="w-full rounded-2xl border-2 border-dashed border-line p-3 text-sm font-semibold text-muted" onClick={startNewAddress}>
+                  {t('co.add_address')}
+                </button>
+              )}
+
+              {showMap && (
+                <div className="pt-2">
+                  <div className="mb-2 text-sm font-semibold">{t('co.pin_title')}</div>
+                  <Suspense fallback={<Skeleton className="h-[260px] rounded-3xl" />}>
+                    <MapPicker value={pin} onChange={onPinChange} store={s?.store} hint={t('co.pin_hint')} onAddress={onMapAddress} />
+                  </Suspense>
+                  {byDistance && (
+                    <div className="mt-2 text-sm">
+                      {!pin ? (
+                        <p className="text-muted">{t('co.pin_needed')}</p>
+                      ) : dq?.tooFar ? (
+                        <Notice tone="error">{t('co.too_far', { max: dq.maxKm ?? '' })}</Notice>
+                      ) : dq?.distanceKm != null ? (
+                        <p className="font-semibold">{t('co.pin_distance', { km: dq.distanceKm })}</p>
+                      ) : null}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {addingAddress && (
                 <Card className="space-y-3">
+                  {movedToNew && <Notice tone="info">{t('co.new_from_map')}</Notice>}
+                  <div className="font-bold">{t('co.new_address')}</div>
+                  {filledFromMap && <p className="text-xs font-semibold text-brand">{t('co.address_filled')}</p>}
                   <Field label={t('co.street')}>
                     <Input value={newAddress.line1} onChange={(e) => setNewAddress({ ...newAddress, line1: e.target.value })} placeholder={t('co.street_ph')} autoComplete="address-line1" />
                   </Field>
@@ -225,37 +281,20 @@ export function Checkout() {
                   </Field>
                   <p className="text-xs text-muted">{t('co.saved_next')}</p>
                   {(addresses.data?.length ?? 0) > 0 && (
-                    <button className="text-sm font-semibold text-muted underline" onClick={() => setAddingAddress(false)}>
+                    <button
+                      className="text-sm font-semibold text-muted underline"
+                      onClick={() => {
+                        setAddingAddress(false);
+                        setMovedToNew(false);
+                      }}
+                    >
                       {t('co.use_saved')}
                     </button>
                   )}
                 </Card>
-              ) : (
-                <button className="w-full rounded-2xl border-2 border-dashed border-line p-3 text-sm font-semibold text-muted" onClick={() => setAddingAddress(true)}>
-                  {t('co.add_address')}
-                </button>
               )}
-            </div>
+            </>
           )}
-        </section>
-      )}
-
-      {/* 2b. Map pin — the fee depends on the distance from the store */}
-      {fulfillment === 'delivery' && byDistance && (
-        <section>
-          <h2 className="mb-2 font-bold">{t('co.pin_title')}</h2>
-          <Suspense fallback={<Skeleton className="h-[260px] rounded-3xl" />}>
-            <MapPicker value={pin} onChange={setPin} store={s?.store} hint={t('co.pin_hint')} />
-          </Suspense>
-          <div className="mt-2 text-sm">
-            {!pin ? (
-              <p className="text-muted">{t('co.pin_needed')}</p>
-            ) : dq?.tooFar ? (
-              <Notice tone="error">{t('co.too_far', { max: dq.maxKm ?? '' })}</Notice>
-            ) : dq?.distanceKm != null ? (
-              <p className="font-semibold">{t('co.pin_distance', { km: dq.distanceKm })}</p>
-            ) : null}
-          </div>
         </section>
       )}
 

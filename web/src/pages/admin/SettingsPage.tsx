@@ -6,6 +6,7 @@ import { api, errorMessage } from '../../lib/api';
 import { fromCents, money, toCents } from '../../lib/format';
 import { useT } from '../../lib/i18n';
 import { toast } from '../../lib/toast';
+import { useShop } from '../../lib/queries';
 import type { LatLng } from '../../lib/types';
 import { type LoyaltyData, PageHeader, settingsPayload, useIsAdmin, useLoyalty } from './common';
 
@@ -51,6 +52,7 @@ function SettingsForm({ data }: { data: LoyaltyData }) {
     nextDayEnabled: s.nextDayEnabled,
     nextDayFee: fromCents(s.nextDayFeeCents),
   });
+  const shop = useShop();
   const [storePin, setStorePin] = useState<LatLng | null>(s.storeLat != null && s.storeLng != null ? { lat: s.storeLat, lng: s.storeLng } : null);
   const locate = useMutation({
     mutationFn: () => api<{ pin: LatLng }>('/admin/settings/locate', { body: { input: f.storeMapsUrl } }),
@@ -167,6 +169,11 @@ function SettingsForm({ data }: { data: LoyaltyData }) {
         <Card className="space-y-4">
           <h2 className="text-lg font-bold">{t('as.dm_title')}</h2>
           <Toggle checked={f.byDistance} onChange={(v) => !d && set('byDistance', v)} label={t('as.dm_by_distance')} hint={t('as.dm_by_distance_hint')} />
+          {shop.data && (
+            <p className={shop.data.mapsApiKey ? 'rounded-2xl bg-emerald-50 p-3 text-sm text-emerald-900 dark:bg-emerald-500/10 dark:text-emerald-200' : 'rounded-2xl bg-surface-2 p-3 text-sm text-muted'}>
+              {t(shop.data.mapsApiKey ? 'as.dm_google_on' : 'as.dm_google_off')}
+            </p>
+          )}
 
           <div className="space-y-2">
             <div className="font-semibold">{t('as.dm_store')}</div>

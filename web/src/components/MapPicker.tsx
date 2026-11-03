@@ -1,18 +1,21 @@
 /**
- * Map pin picker (OpenStreetMap via Leaflet — free, no API key).
- * Delivery-app style: the pin stays in the middle and the customer moves the map under it, which is
- * much easier on a phone than dragging a marker. Loaded lazily so the shop doesn't pay for it upfront.
+ * Map pin picker. Delivery-app style: the pin stays in the middle and the customer moves the map
+ * under it. Uses Google Maps (with address auto-fill) when the shop has a Google Maps key, otherwise
+ * — or if Google can't load — the free OpenStreetMap map. Loaded lazily.
  */
-import L from 'leaflet';
-import 'leaflet/dist/leaflet.css';
-import { useEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useEffect, useRef, useState } from 'react';
+import { reverseGeocode, type GeoAddress } from '../lib/googleMaps';
 import { useT } from '../lib/i18n';
+import { useShop } from '../lib/queries';
 import { getCurrentLocation, haptic } from '../lib/telegram';
 import type { LatLng } from '../lib/types';
+import { metresBetween, round6 } from './maps/shared';
 import { cx } from './ui';
 
-export const PHNOM_PENH: LatLng = { lat: 11.5564, lng: 104.9282 };
-const round6 = (n: number) => Math.round(n * 1e6) / 1e6;
+const GoogleMapView = lazy(() => import('./maps/GoogleMapView'));
+const LeafletMapView = lazy(() => import('./maps/LeafletMapView'));
+
+export { PHNOM_PENH } from './maps/shared';
 
 export default function MapPicker({
   value,
@@ -21,6 +24,7 @@ export default function MapPicker({
   pinEmoji = '📍',
   height = 260,
   hint,
+  onAddress,
 }: {
   value: LatLng | null;
   onChange: (p: LatLng) => void;
@@ -30,57 +34,37 @@ export default function MapPicker({
   height?: number;
   /** Shown over the map until a pin is chosen. */
   hint?: string;
+  /** Google only: called with the street address under the pin (after the map stops moving). */
+  onAddress?: (a: GeoAddress) => void;
 }) {
   const { t } = useT();
-  const el = useRef<HTMLDivElement>(null);
-  const map = useRef<L.Map | null>(null);
-  const programmatic = useRef(false);
+  const shop = useShop();
+  const apiKey = shop.data?.mapsApiKey ?? null;
+  const [googleFailed, setGoogleFailed] = useState(false);
+  const useGoogle = !!apiKey && !googleFailed;
   const onChangeRef = useRef(onChange);
   onChangeRef.current = onChange;
+  const onAddressRef = useRef(onAddress);
+  onAddressRef.current = onAddress;
   const [locating, setLocating] = useState(false);
   const [locateError, setLocateError] = useState(false);
+  const [address, setAddress] = useState<{ status: 'idle' | 'looking' | 'found' | 'none'; text?: string }>({ status: 'idle' });
+  const lastLookup = useRef<LatLng | null>(null);
 
+  // Pin → street address (debounced; skipped for tiny nudges to keep Geocoding calls low).
   useEffect(() => {
-    const start = value ?? store ?? PHNOM_PENH;
-    const m = L.map(el.current!, { zoomControl: true, attributionControl: true }).setView([start.lat, start.lng], value ? 17 : 14);
-    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      maxZoom: 19,
-      attribution: '© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">OpenStreetMap</a>',
-    }).addTo(m);
-    if (store) {
-      L.marker([store.lat, store.lng], {
-        interactive: false,
-        icon: L.divIcon({ className: '', html: '<div class="map-store-marker">🏪</div>', iconSize: [34, 34], iconAnchor: [17, 17] }),
-      }).addTo(m);
-    }
-    m.on('moveend', () => {
-      if (programmatic.current) return;
-      const c = m.getCenter();
-      onChangeRef.current({ lat: round6(c.lat), lng: round6(c.lng) });
-    });
-    map.current = m;
-    // The map may mount inside a sheet / collapsed section: re-measure when the box changes.
-    const ro = new ResizeObserver(() => m.invalidateSize());
-    ro.observe(el.current!);
-    return () => {
-      ro.disconnect();
-      m.remove();
-      map.current = null;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [store?.lat, store?.lng]);
-
-  // Follow outside changes (saved address picked, "use my location", pasted link).
-  useEffect(() => {
-    const m = map.current;
-    if (!m || !value) return;
-    const c = m.getCenter();
-    if (Math.abs(c.lat - value.lat) > 1e-6 || Math.abs(c.lng - value.lng) > 1e-6) {
-      programmatic.current = true;
-      m.setView([value.lat, value.lng], Math.max(m.getZoom(), 16), { animate: false });
-      programmatic.current = false;
-    }
-  }, [value?.lat, value?.lng, value]);
+    if (!useGoogle || !value || !onAddressRef.current) return;
+    if (lastLookup.current && metresBetween(lastLookup.current, value) < 15) return;
+    setAddress({ status: 'looking' });
+    const timer = setTimeout(async () => {
+      lastLookup.current = value;
+      const a = await reverseGeocode(value);
+      if (!a) return setAddress({ status: 'none' });
+      setAddress({ status: 'found', text: a.formatted });
+      onAddressRef.current?.(a);
+    }, 700);
+    return () => clearTimeout(timer);
+  }, [useGoogle, value?.lat, value?.lng, value]);
 
   const locate = async () => {
     setLocating(true);
@@ -96,10 +80,19 @@ export default function MapPicker({
     onChangeRef.current({ lat: round6(p.lat), lng: round6(p.lng) });
   };
 
+  const viewProps = { value, store, onMove: (p: LatLng) => onChangeRef.current(p) };
+  const fallback = <div className="h-full w-full animate-pulse bg-surface-2" />;
+
   return (
     <div className="space-y-2">
       <div className="relative isolate overflow-hidden rounded-3xl ring-1 ring-line" style={{ height }}>
-        <div ref={el} className="h-full w-full" />
+        {shop.isLoading ? (
+          fallback
+        ) : (
+          <Suspense fallback={fallback}>
+            {useGoogle ? <GoogleMapView {...viewProps} apiKey={apiKey!} onFail={() => setGoogleFailed(true)} /> : <LeafletMapView {...viewProps} />}
+          </Suspense>
+        )}
         {/* Fixed centre pin — its tip marks the exact spot. */}
         <div className="pointer-events-none absolute left-1/2 top-1/2 z-[500] -translate-x-1/2 -translate-y-full text-4xl drop-shadow-md">{pinEmoji}</div>
         <div className="pointer-events-none absolute left-1/2 top-1/2 z-[500] h-2 w-2 -translate-x-1/2 -translate-y-1/2 rounded-full bg-ink/40" />
@@ -115,6 +108,17 @@ export default function MapPicker({
           {locating ? t('map.locating') : t('map.use_my_location')}
         </button>
       </div>
+      {onAddress && useGoogle && address.status !== 'idle' && (
+        <p className="text-sm">
+          {address.status === 'looking' ? (
+            <span className="text-muted">{t('map.looking_up')}</span>
+          ) : address.status === 'found' ? (
+            <span className="font-semibold">📍 {address.text}</span>
+          ) : (
+            <span className="text-muted">{t('map.no_address')}</span>
+          )}
+        </p>
+      )}
       {locateError && <p className="text-xs text-rose-700 dark:text-rose-300">{t('map.locate_failed')}</p>}
     </div>
   );

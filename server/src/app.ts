@@ -18,7 +18,7 @@ import { adminLoyaltyRoutes } from './routes/admin/loyalty.js';
 import { adminOrderRoutes } from './routes/admin/orders.js';
 import { customerRoutes } from './routes/customer.js';
 import { publicRoutes } from './routes/public.js';
-import { telegramRoutes } from './routes/telegram.js';
+import { cspReportRoutes, telegramRoutes } from './routes/telegram.js';
 
 const webDist = resolve(dirname(fileURLToPath(import.meta.url)), '../../web/dist');
 
@@ -34,16 +34,21 @@ export async function buildApp() {
     frameguard: false,
     crossOriginEmbedderPolicy: false,
     contentSecurityPolicy: {
+      // Google Maps hosts follow Google's Maps JavaScript API CSP guide; violations are reported to
+      // /api/csp-report (logged) and the map falls back to OpenStreetMap if Google can't load.
       directives: {
         defaultSrc: ["'self'"],
-        scriptSrc: ["'self'", 'https://telegram.org'],
-        styleSrc: ["'self'", "'unsafe-inline'"],
+        scriptSrc: ["'self'", 'https://telegram.org', 'https://*.googleapis.com', 'https://*.gstatic.com', 'https://*.google.com', "'unsafe-eval'", 'blob:'],
+        styleSrc: ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'],
         imgSrc: ["'self'", 'data:', 'blob:', 'https:'],
-        connectSrc: ["'self'"],
-        fontSrc: ["'self'", 'data:'],
+        connectSrc: ["'self'", 'https://*.googleapis.com', 'https://*.google.com', 'https://*.gstatic.com', 'data:', 'blob:'],
+        fontSrc: ["'self'", 'data:', 'https://fonts.gstatic.com'],
+        frameSrc: ["'self'", 'https://*.google.com'],
+        workerSrc: ["'self'", 'blob:'],
         frameAncestors: ["'self'", 'https://web.telegram.org', 'https://*.telegram.org'],
         objectSrc: ["'none'"],
         formAction: ["'self'"],
+        reportUri: ['/api/csp-report'],
         upgradeInsecureRequests: null,
       },
     },
@@ -87,6 +92,7 @@ export async function buildApp() {
     async (api) => {
       await api.register(publicRoutes);
       await api.register(telegramRoutes);
+      await api.register(cspReportRoutes);
       await api.register(customerRoutes);
       await api.register(
         async (admin) => {

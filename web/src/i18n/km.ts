@@ -349,4 +349,9 @@ export const km: Record<keyof typeof en, string> = {
   'order.deliver_tomorrow': '📅 ដឹកថ្ងៃស្អែក — {date}',
   'order.deliver_today': '⚡ ដឹកក្នុងថ្ងៃនេះ',
   'order.km': 'ចម្ងាយ {km} គ.ម ពីហាង',
+  'map.looking_up': 'កំពុងស្វែងរកអាសយដ្ឋាន…',
+  'map.no_address': 'រកមិនឃើញឈ្មោះផ្លូវនៅទីនេះទេ — សូមវាយបញ្ចូលខាងក្រោម។',
+  'co.address_filled': '📍 បំពេញពីផែនទី — សូមបន្ថែមលេខផ្ទះ ជាន់ ឬទីសម្គាល់។',
+  'co.new_from_map': 'អ្នកបានរំកិលម្ជុលទៅទីតាំងថ្មី ដូច្នេះយើងបានបង្កើតអាសយដ្ឋានថ្មីសម្រាប់វា។',
+  'co.new_address': 'អាសយដ្ឋានថ្មី',
 };

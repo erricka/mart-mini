@@ -360,4 +360,9 @@ export const en = {
   'order.deliver_tomorrow': '📅 Delivery tomorrow — {date}',
   'order.deliver_today': '⚡ Same-day delivery',
   'order.km': '{km} km from the store',
+  'map.looking_up': 'Finding the address…',
+  'map.no_address': "No street address here — type it below.",
+  'co.address_filled': '📍 Filled in from the map — add your house number, floor or a landmark.',
+  'co.new_from_map': 'You moved the pin to a new place, so we started a new address for it.',
+  'co.new_address': 'New address',
 };

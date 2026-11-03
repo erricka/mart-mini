@@ -467,4 +467,6 @@ export const enAdmin = {
   'as.dm_next_day_fee': 'Tomorrow fee',
   'as.dm_next_day_hint': 'Flat fee for next-day delivery — never more than the same-day fee.',
   'as.dm_flat_hint': 'Used when not charging by distance, or until the store location is set.',
+  'as.dm_google_on': '🗺️ Google Maps is on — customers’ addresses fill in automatically from the pin.',
+  'as.dm_google_off': '🗺️ Using the free OpenStreetMap map. Add a Google Maps key (GOOGLE_MAPS_API_KEY in Render → Environment) to switch to Google Maps with address auto-fill.',
 };
