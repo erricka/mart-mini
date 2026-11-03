@@ -6,15 +6,13 @@ services:
     name: mart25
     runtime: node
     region: singapore
-    plan: starter            # paid plan: always on (free instances sleep, which delays the bot webhook)
+    # Free plan: sleeps after 15 min without visitors and takes ~1 min to wake (Telegram retries the bot
+    # webhook, so messages still arrive). Use `starter` for an always-on shop.
+    plan: free
     buildCommand: npm ci --include=dev && npm run build
     startCommand: npm start
     healthCheckPath: /api/health
     autoDeploy: true
-    disk:                    # keeps uploaded product photos across deploys
-      name: uploads
-      mountPath: /opt/render/project/src/server/uploads
-      sizeGB: 1
     envVars:
       - key: NODE_ENV
         value: production
