@@ -113,7 +113,7 @@ There are 36 tests: unit tests for Telegram signatures and pricing, plus API int
 See **[docs/DEPLOY.md](docs/DEPLOY.md)**. In short:
 
 1. Create a bot with [@BotFather](https://t.me/BotFather) and get your ID from [@userinfobot](https://t.me/userinfobot).
-2. Deploy with `render.yaml`: [one-click Render deploy](https://render.com/deploy?repo=https://github.com/erricka/mart-mini) (Blueprint, Singapore).
+2. Create a free [Neon](https://console.neon.tech/signup) database (Singapore), then deploy with `render.yaml`: [one-click Render deploy](https://render.com/deploy?repo=https://github.com/erricka/mart-mini) (free plan, Singapore). Paste the Neon connection string as `DATABASE_URL`. Total cost: $0.
 3. Enable the Mini App in [@BotFather](https://t.me/BotFather) with your Render URL.
 4. Open the bot and tap **🛒 ទិញទំនិញ**. Staff send `/dashboard`.
 

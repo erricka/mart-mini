@@ -1,6 +1,7 @@
 # Render Blueprint — one-click deploy: Render Dashboard → New → Blueprint → pick this repo.
-# Creates the app (API + Mini App + dashboard) and a PostgreSQL database in Singapore.
-# You'll be asked for the values marked `sync: false`.
+# Creates the app (API + Mini App + dashboard) on Render's free plan, in Singapore.
+# The database is a free Neon Postgres (https://neon.com, region Singapore) — paste its connection
+# string as DATABASE_URL. You'll be asked for the values marked `sync: false`.
 services:
   - type: web
     name: mart25
@@ -18,10 +19,8 @@ services:
         value: production
       - key: NODE_VERSION
         value: "22"
-      - key: DATABASE_URL
-        fromDatabase:
-          name: mart25-db
-          property: connectionString
+      - key: DATABASE_URL           # Neon connection string (postgresql://…neon.tech/neondb?sslmode=require)
+        sync: false
       - key: SESSION_SECRET
         generateValue: true
       - key: TELEGRAM_WEBHOOK_SECRET
@@ -38,11 +37,6 @@ services:
         sync: false
       - key: ADMIN_TELEGRAM_IDS       # your Telegram user id (from @userinfobot), comma-separated
         sync: false
+      # Optional: GOOGLE_MAPS_API_KEY (Google Maps with address auto-fill) — add it under Environment.
       # PUBLIC_URL is detected automatically on Render. Set it only when you add a custom domain.
 
-databases:
-  - name: mart25-db
-    region: singapore
-    plan: basic-256mb
-    databaseName: mart25
-    user: market

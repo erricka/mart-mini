@@ -3,7 +3,7 @@
 About 30–45 minutes, no server administration needed. You'll do four things:
 
 1. Create the Telegram bot.
-2. Deploy the app to Render (hosting plus database, Singapore region).
+2. Deploy the app to Render (free hosting, Singapore) with a free Neon database.
 3. Connect the bot to the app.
 4. Set up the shop in the dashboard and print the QR codes.
 
@@ -11,7 +11,10 @@ You need:
 
 - a Telegram account (two accounts or a friend's phone help for testing)
 - this code on GitHub: **[github.com/erricka/mart-mini](https://github.com/erricka/mart-mini)**
-- a [Render](https://dashboard.render.com/register) account (sign up with GitHub). Paid "Starter" plans come to about US$15/month total. See [Render pricing](https://render.com/pricing).
+- a [Render](https://dashboard.render.com/register) account (sign up with GitHub). The app runs on Render's **free** plan.
+- a [Neon](https://console.neon.tech/signup) account for the database. The free plan has no expiry and needs no card.
+
+**Cost: $0.** On Render's free plan the app sleeps after 15 minutes without visitors, and the next visitor waits about a minute while it wakes. Telegram resends bot messages while it wakes. For an always-on shop, switch the service to Render's **Starter** plan (about US$7/month). Nothing else changes.
 
 ## Quick links
 
@@ -60,16 +63,17 @@ Optional branding in BotFather: `/setuserpic` (logo), `/setdescription` (shown b
    **[render.com/deploy?repo=https://github.com/erricka/mart-mini](https://render.com/deploy?repo=https://github.com/erricka/mart-mini)**
 
    If you prefer doing it by hand: [Render Blueprints](https://dashboard.render.com/blueprints) → **New Blueprint Instance** → connect GitHub → choose **erricka/mart-mini** (branch `main`).
-   Either way, Render reads [`render.yaml`](../render.yaml) and proposes a **web service** (`mart25`) and a **PostgreSQL database**, both in Singapore. Choose a **Blueprint name**, e.g. *mart25*.
+   Either way, Render reads [`render.yaml`](../render.yaml) and proposes a **free web service** (`mart25`) in Singapore. Choose a **Blueprint name**, e.g. *mart25*.
 2. Fill in the values it asks for:
 
    | Key | Value |
    | --- | --- |
+   | `DATABASE_URL` | your **Neon** connection string. Create a project at [console.neon.tech](https://console.neon.tech) (region **AWS Asia Pacific (Singapore)**), click **Connect**, turn **Connection pooling off**, then copy the `postgresql://…neon.tech/neondb?sslmode=require` line |
    | `TELEGRAM_BOT_TOKEN` | the token from BotFather |
    | `TELEGRAM_BOT_USERNAME` | the bot username **without** `@` |
    | `ADMIN_TELEGRAM_IDS` | your user ID from @userinfobot (comma-separate several admins) |
 
-   Everything else is set automatically: the session secret, webhook secret, database connection, migrations, the public URL, and **starter shop data on first boot**.
+   Everything else is set automatically: the session secret, webhook secret, migrations, the public URL, and **starter shop data on first boot**.
 3. Click **Apply**. The first build takes a few minutes.
 4. When it's live, open the service in the [Render dashboard](https://dashboard.render.com) and copy the URL shown under its name, e.g. `https://mart25.onrender.com`. Opening it in a normal browser shows *"Open in Telegram"*. That's expected: the app only signs people in through Telegram.
 5. Check the service **Logs** (left menu). You should see:
@@ -227,8 +231,10 @@ This key is a *browser* key. It's visible in the page by design, and the website
 ## Day-to-day
 
 - **Updates:** push to `main` on [GitHub](https://github.com/erricka/mart-mini) and Render redeploys automatically. Database migrations run on boot. You can follow it under the service's **Events** in the [Render dashboard](https://dashboard.render.com).
-- **Photos:** stored on the attached Render disk (`server/uploads`), so they survive deploys.
-- **Backups:** check the backup options of your Render Postgres plan, and test a restore once.
+- **Photos:** stored in the database (shrunk to at most 1000 px before upload), so they survive deploys and need no disk.
+- **Backups:** Neon keeps a short restore history on the free plan. See the project's **Backup & restore** page. For extra safety, export the data now and then.
+- **Free limits:** Neon free gives 1 GB of storage and 100 compute-hours a month. The database pauses after 5 minutes without queries, so a quiet shop uses far less. A dashboard left **on screen** all day keeps it awake (minimise it when you're not using it; new-order alerts still come through Telegram). Render's 750 free hours a month are shared by all free services in your workspace.
+- **Moving to another database later:** set `NEW_DATABASE_URL` to the new (empty) database. On its next start the app copies everything from the current `DATABASE_URL` into it and switches over. Then set `DATABASE_URL` to the new one.
 - **Custom domain (optional):** Render → service → Settings → Custom Domains ([guide](https://render.com/docs/custom-domains)). Then set `PUBLIC_URL=https://shop.yourdomain.com` and update the Mini App URL in [@BotFather](https://t.me/BotFather).
 
 ## Troubleshooting
@@ -241,7 +247,7 @@ This key is a *browser* key. It's visible in the page by design, and the website
 | Customers don't get order messages | They must allow messages. The app asks during onboarding and after an order (“Get order updates in Telegram”). Customers who pressed Start in the bot chat always receive them. |
 | `/dashboard` says *staff only* | Add your user ID (from [@userinfobot](https://t.me/userinfobot)) to `ADMIN_TELEGRAM_IDS` in Render → service → **Environment**, or have an admin set your role to Staff. |
 | Need help with Render itself | [Render docs: Blueprints](https://render.com/docs/infrastructure-as-code) · [Render status](https://status.render.com) |
-| First load is slow | You're on a free instance that sleeps. Use the paid Starter plan in production. |
+| First load is slow (about 1 minute) | The free instance was asleep. It's normal on the free plan. Switch to Starter for an always-on shop. |
 
 ## Alternative: your own server (VPS)
 
