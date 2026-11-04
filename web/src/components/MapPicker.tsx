@@ -13,6 +13,12 @@ import { metresBetween, round6 } from './maps/shared';
 import { cx } from './ui';
 
 const GoogleMapView = lazy(() => import('./maps/GoogleMapView'));
+
+// Frugal address look-ups (Google's free amount is per month): only after the map has been still for
+// a moment, only when the pin really moved, and at most a few per checkout.
+const LOOKUP_DELAY_MS = 1200;
+const MIN_MOVE_M = 40;
+const MAX_LOOKUPS = 6;
 const LeafletMapView = lazy(() => import('./maps/LeafletMapView'));
 
 export { PHNOM_PENH } from './maps/shared';
@@ -61,20 +67,24 @@ export default function MapPicker({
   const [locateError, setLocateError] = useState(false);
   const [address, setAddress] = useState<{ status: 'idle' | 'looking' | 'found' | 'none'; text?: string }>({ status: 'idle' });
   const lastLookup = useRef<LatLng | null>(null);
+  /** Address look-ups used on this map (each one counts against Google's free monthly amount). */
+  const lookups = useRef(0);
 
   // Pin → street address (debounced; skipped for tiny nudges to keep Geocoding calls low).
   const wantsAddress = !!onAddress;
   useEffect(() => {
     if (!useGoogle || !value || !onAddressRef.current) return;
-    if (lastLookup.current && metresBetween(lastLookup.current, value) < 15) return;
+    if (lastLookup.current && metresBetween(lastLookup.current, value) < MIN_MOVE_M) return;
+    if (lookups.current >= MAX_LOOKUPS) return; // keep the last filled address; the customer can edit it
     setAddress({ status: 'looking' });
     const timer = setTimeout(async () => {
       lastLookup.current = value;
+      lookups.current += 1;
       const a = await reverseGeocode(value);
       if (!a) return setAddress({ status: 'none' });
       setAddress({ status: 'found', text: a.formatted });
       onAddressRef.current?.(a);
-    }, 700);
+    }, LOOKUP_DELAY_MS);
     return () => clearTimeout(timer);
   }, [useGoogle, wantsAddress, value?.lat, value?.lng, value]);
 
