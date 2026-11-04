@@ -4,7 +4,7 @@
  * — or if Google can't load — the free OpenStreetMap map. Loaded lazily.
  */
 import { lazy, Suspense, useEffect, useRef, useState } from 'react';
-import { reverseGeocode, type GeoAddress } from '../lib/googleMaps';
+import { allowGoogle, reverseGeocode, type GeoAddress } from '../lib/googleMaps';
 import { useT } from '../lib/i18n';
 import { useShop } from '../lib/queries';
 import { getCurrentLocation, haptic } from '../lib/telegram';
@@ -41,7 +41,18 @@ export default function MapPicker({
   const shop = useShop();
   const apiKey = shop.data?.mapsApiKey ?? null;
   const [googleFailed, setGoogleFailed] = useState(false);
-  const useGoogle = !!apiKey && !googleFailed;
+  // Each Google map shown is counted on the server (keeps Google free); "no" → the free map.
+  const [googleOk, setGoogleOk] = useState<boolean | null>(null);
+  useEffect(() => {
+    if (!apiKey) return setGoogleOk(false);
+    let live = true;
+    void allowGoogle('map').then((ok) => live && setGoogleOk(ok));
+    return () => {
+      live = false;
+    };
+  }, [apiKey]);
+  const useGoogle = !!apiKey && googleOk === true && !googleFailed;
+  const deciding = shop.isLoading || (!!apiKey && googleOk === null);
   const onChangeRef = useRef(onChange);
   onChangeRef.current = onChange;
   const onAddressRef = useRef(onAddress);
@@ -52,6 +63,7 @@ export default function MapPicker({
   const lastLookup = useRef<LatLng | null>(null);
 
   // Pin → street address (debounced; skipped for tiny nudges to keep Geocoding calls low).
+  const wantsAddress = !!onAddress;
   useEffect(() => {
     if (!useGoogle || !value || !onAddressRef.current) return;
     if (lastLookup.current && metresBetween(lastLookup.current, value) < 15) return;
@@ -64,7 +76,7 @@ export default function MapPicker({
       onAddressRef.current?.(a);
     }, 700);
     return () => clearTimeout(timer);
-  }, [useGoogle, value?.lat, value?.lng, value]);
+  }, [useGoogle, wantsAddress, value?.lat, value?.lng, value]);
 
   const locate = async () => {
     setLocating(true);
@@ -86,7 +98,7 @@ export default function MapPicker({
   return (
     <div className="space-y-2">
       <div className="relative isolate overflow-hidden rounded-3xl ring-1 ring-line" style={{ height }}>
-        {shop.isLoading ? (
+        {deciding ? (
           fallback
         ) : (
           <Suspense fallback={fallback}>

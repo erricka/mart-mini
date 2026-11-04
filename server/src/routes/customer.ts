@@ -9,6 +9,7 @@ import { limit } from '../lib/rate-limit.js';
 import { idParam, parse } from '../lib/validate.js';
 import { makeGuards } from '../plugins/auth.js';
 import { addressInputSchema, cartSchema, placeOrderSchema, placeOrder, quoteCart } from '../services/checkout.js';
+import { allowMapsUse } from '../services/mapsBudget.js';
 import { publicUser, resolvePhoneInput } from '../services/identity.js';
 import { availableDiscounts, loyaltyOverview, markRewardsSeen } from '../services/loyalty.js';
 import { changeOrderStatus, getOrderDetail, serializeOrderSummary } from '../services/orders.js';
@@ -19,6 +20,12 @@ export async function customerRoutes(app: FastifyInstance) {
   app.addHook('preHandler', guard.customer);
 
   // ---------- Profile ----------
+  // Google Maps budget: the browser asks before each Google map / address look-up (keeps it free).
+  app.post('/maps/allow', { config: { rateLimit: { max: 60, timeWindow: '1 minute' } } }, async (req) => {
+    const { kind } = parse(z.object({ kind: z.enum(['map', 'geocode']) }), req.body);
+    return { allowed: await allowMapsUse(kind) };
+  });
+
   app.get('/me', async (req) => {
     const u = req.account!;
     const { current, next } = levelFor(await getLevels(), u.pointsBalance);

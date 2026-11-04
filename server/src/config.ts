@@ -50,6 +50,12 @@ const schema = z.object({
    * Google Cloud. Empty = the free OpenStreetMap map without address auto-fill.
    */
   GOOGLE_MAPS_API_KEY: z.string().trim().optional().default(''),
+  /**
+   * Google's free usage is 10,000 map loads and 10,000 address look-ups per month. The app stops using
+   * Google (falls back to the free map / manual typing) beyond these limits, so it never costs money.
+   */
+  MAPS_DAILY_LIMIT: z.coerce.number().int().min(0).default(300),
+  MAPS_MONTHLY_LIMIT: z.coerce.number().int().min(0).max(10_000).default(9_000),
   TELEGRAM_MINIAPP_SHORT_NAME: z.string().optional().default(''),
   TELEGRAM_BOT_MODE: z.enum(['off', 'polling', 'webhook']).default('off'),
   TELEGRAM_WEBHOOK_SECRET: z.string().optional().default(''),

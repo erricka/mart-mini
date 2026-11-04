@@ -36,6 +36,13 @@
       "when": 1793706891560,
       "tag": "0004_media_in_db",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1793762778800,
+      "tag": "0005_maps_usage",
+      "breakpoints": true
     }
   ]
 }

@@ -213,7 +213,11 @@ About 10 minutes. Google requires a billing account, but a small shop normally s
 5. **Add it to Render:** service **mart25 → Environment → Add environment variable**. Set `GOOGLE_MAPS_API_KEY` to the key, then **Save**. Render restarts the app.
 6. **Check:** Dashboard → Settings → 🛵 should say *"Google Maps is on"*. In Telegram, start a delivery order and move the pin: the street and city fill in.
 
-**Avoid surprise bills (recommended):** set a [budget alert](https://console.cloud.google.com/billing/budgets), e.g. $5. You can also cap the Geocoding API's **requests per day** under *APIs & Services → Geocoding API → Quotas*. The app only looks up the address after the map stops moving, and not again for tiny nudges.
+**It stays free, enforced in two layers:**
+1. **The app counts every Google use.** At most **300 Google maps and 300 address lookups a day**, and never more than **9,000 of each a month** (Google's free amount is 10,000). Beyond that, customers get the free OpenStreetMap map and type the address themselves, and Google isn't called at all. Settings → 🛵 shows this month's count. You can change the limits with the `MAPS_DAILY_LIMIT` / `MAPS_MONTHLY_LIMIT` environment variables. Address lookups only happen while a customer is entering a **new** address.
+2. **A hard cap in Google (recommended):** it also stops anyone who copies the key. In Google Cloud, open [Maps JavaScript API → Quotas](https://console.cloud.google.com/apis/api/maps-backend.googleapis.com/quotas), find **Map loads per day**, choose **Edit**, and set **300**. Then open [Geocoding API → Quotas](https://console.cloud.google.com/apis/api/geocoding-backend.googleapis.com/quotas), find **Requests per day**, and set **300**. 300 a day × 31 days stays below 10,000.
+
+Also set a [budget alert](https://console.cloud.google.com/billing/budgets) of $1, so Google emails you if anything is ever charged.
 
 This key is a *browser* key. It's visible in the page by design, and the website restriction from step 4 is what protects it. If the checkout still shows the OpenStreetMap map after you add the key, Google rejected it for this site. Check the restriction in step 4. The server log also reports any blocked Google requests (`CSP violation`).
 

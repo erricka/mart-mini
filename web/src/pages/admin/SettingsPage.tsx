@@ -1,4 +1,4 @@
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { lazy, Suspense, useState } from 'react';
 import { LanguageSwitch } from '../../components/LanguageSwitch';
 import { Button, Card, ErrorState, Field, Input, Notice, Skeleton, Toggle } from '../../components/ui';
@@ -53,6 +53,11 @@ function SettingsForm({ data }: { data: LoyaltyData }) {
     nextDayFee: fromCents(s.nextDayFeeCents),
   });
   const shop = useShop();
+  const mapsUsage = useQuery({
+    queryKey: ['admin', 'maps-usage'],
+    enabled: !!shop.data?.mapsApiKey,
+    queryFn: () => api<{ maps: number; geocodes: number; monthlyLimit: number }>('/admin/maps-usage'),
+  });
   const [storePin, setStorePin] = useState<LatLng | null>(s.storeLat != null && s.storeLng != null ? { lat: s.storeLat, lng: s.storeLng } : null);
   const locate = useMutation({
     mutationFn: () => api<{ pin: LatLng }>('/admin/settings/locate', { body: { input: f.storeMapsUrl } }),
@@ -172,6 +177,11 @@ function SettingsForm({ data }: { data: LoyaltyData }) {
           {shop.data && (
             <p className={shop.data.mapsApiKey ? 'rounded-2xl bg-emerald-50 p-3 text-sm text-emerald-900 dark:bg-emerald-500/10 dark:text-emerald-200' : 'rounded-2xl bg-surface-2 p-3 text-sm text-muted'}>
               {t(shop.data.mapsApiKey ? 'as.dm_google_on' : 'as.dm_google_off')}
+              {mapsUsage.data && (
+                <span className="mt-1 block text-xs opacity-80">
+                  {t('as.dm_google_usage', { maps: mapsUsage.data.maps, geocodes: mapsUsage.data.geocodes, limit: mapsUsage.data.monthlyLimit.toLocaleString('en-US') })}
+                </span>
+              )}
             </p>
           )}
 

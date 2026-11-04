@@ -463,4 +463,5 @@ export const kmAdmin: Record<keyof typeof enAdmin, string> = {
   'as.dm_flat_hint': 'ប្រើពេលមិនគិតតាមចម្ងាយ ឬរហូតដល់កំណត់ទីតាំងហាង។',
   'as.dm_google_on': '🗺️ Google Maps កំពុងដំណើរការ — អាសយដ្ឋានអតិថិជនបំពេញដោយស្វ័យប្រវត្តិពីម្ជុល។',
   'as.dm_google_off': '🗺️ កំពុងប្រើផែនទី OpenStreetMap ឥតគិតថ្លៃ។ បន្ថែមកូនសោ Google Maps (GOOGLE_MAPS_API_KEY ក្នុង Render → Environment) ដើម្បីប្តូរទៅ Google Maps ដែលបំពេញអាសយដ្ឋានដោយស្វ័យប្រវត្តិ។',
+  'as.dm_google_usage': 'Google ខែនេះ៖ ផែនទី {maps} · ស្វែងរកអាសយដ្ឋាន {geocodes}។ កម្មវិធីឈប់ប្រើ Google នៅ {limit} នីមួយៗ (Google ឥតគិតថ្លៃរហូតដល់ 10,000) ដូច្នេះវានៅតែឥតគិតថ្លៃ។',
 };

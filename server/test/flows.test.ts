@@ -534,3 +534,27 @@ describe('Photos stored in the database', () => {
     expect((await app.inject({ method: 'GET', url: '/media/%2e%2e%2fsecret.png' })).statusCode).toBe(404);
   });
 });
+
+describe('Google Maps budget (keeps Google free)', () => {
+  it('allows Google maps / look-ups up to the daily and monthly limits, then says no', async () => {
+    const { allowMapsUse } = await import('../src/services/mapsBudget.js');
+    const day = new Date('2026-03-10T20:00:00Z');
+    const limits = { daily: 3, monthly: 5 };
+    const results = [];
+    for (let i = 0; i < 4; i++) results.push(await allowMapsUse('geocode', limits, day));
+    expect(results).toEqual([true, true, true, false]); // daily cap
+    const nextDay = new Date('2026-03-11T20:00:00Z');
+    expect(await allowMapsUse('geocode', limits, nextDay)).toBe(true);
+    expect(await allowMapsUse('geocode', limits, nextDay)).toBe(true);
+    expect(await allowMapsUse('geocode', limits, nextDay)).toBe(false); // monthly cap (5)
+    expect(await allowMapsUse('map', limits, nextDay)).toBe(true); // counted separately
+    expect(await allowMapsUse('geocode', limits, new Date('2026-04-02T20:00:00Z'))).toBe(true); // new month
+  });
+
+  it('is available to signed-in users only', async () => {
+    expect((await call('POST', '/api/maps/allow', undefined, { kind: 'map' })).status).toBe(401);
+    const ok = await call('POST', '/api/maps/allow', adminToken, { kind: 'map' });
+    expect(ok.status).toBe(200);
+    expect(typeof ok.json.allowed).toBe('boolean');
+  });
+});

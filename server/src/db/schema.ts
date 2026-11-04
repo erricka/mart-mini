@@ -10,6 +10,7 @@ import {
   integer,
   pgEnum,
   pgTable,
+  primaryKey,
   serial,
   text,
   timestamp,
@@ -555,3 +556,18 @@ export const media = pgTable('media', {
   size: integer('size').notNull(),
   createdAt: createdAt(),
 });
+
+/**
+ * Google Maps calls counted per day (Pacific time, like Google's billing) so the shop stays inside
+ * Google's free monthly usage — see services/mapsBudget.ts.
+ */
+export const mapsUsage = pgTable(
+  'maps_usage',
+  {
+    day: date('day', { mode: 'string' }).notNull(),
+    /** 'map' (a Google map shown) or 'geocode' (pin → address look-up). */
+    kind: text('kind').notNull(),
+    count: integer('count').notNull().default(0),
+  },
+  (t) => [primaryKey({ columns: [t.day, t.kind] })],
+);

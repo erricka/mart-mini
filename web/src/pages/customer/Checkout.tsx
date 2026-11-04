@@ -246,7 +246,7 @@ export function Checkout() {
                 <div className="pt-2">
                   <div className="mb-2 text-sm font-semibold">{t('co.pin_title')}</div>
                   <Suspense fallback={<Skeleton className="h-[260px] rounded-3xl" />}>
-                    <MapPicker value={pin} onChange={onPinChange} store={s?.store} hint={t('co.pin_hint')} onAddress={onMapAddress} />
+                    <MapPicker value={pin} onChange={onPinChange} store={s?.store} hint={t('co.pin_hint')} onAddress={addingAddress ? onMapAddress : undefined} />
                   </Suspense>
                   {byDistance && (
                     <div className="mt-2 text-sm">

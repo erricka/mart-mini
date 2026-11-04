@@ -3,7 +3,20 @@
  * The key comes from the server (/api/shop → mapsApiKey) so it can be changed without a rebuild.
  * Any failure (bad key, blocked script, no network) is reported so the map can fall back to OpenStreetMap.
  */
+import { api } from './api';
 import type { LatLng } from './types';
+
+/**
+ * Asks the server before each Google map / address look-up. The server counts them and says "no"
+ * before Google's free monthly usage runs out (the app then uses the free map / manual typing).
+ */
+export async function allowGoogle(kind: 'map' | 'geocode'): Promise<boolean> {
+  try {
+    return (await api<{ allowed: boolean }>('/maps/allow', { body: { kind } })).allowed;
+  } catch {
+    return false;
+  }
+}
 
 export interface GeoAddress {
   /** Street / house number, sangkat, khan — goes into the "street" field. */
@@ -71,6 +84,7 @@ let geocoder: google.maps.Geocoder | null = null;
 /** Pin → address in the language the map was loaded with. Null when Google has nothing useful. */
 export async function reverseGeocode(p: LatLng): Promise<GeoAddress | null> {
   try {
+    if (!(await allowGoogle('geocode'))) return null;
     if (!geocoder) {
       const { Geocoder } = (await google.maps.importLibrary('geocoding')) as google.maps.GeocodingLibrary;
       geocoder = new Geocoder();

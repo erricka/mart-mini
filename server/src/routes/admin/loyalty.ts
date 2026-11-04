@@ -5,6 +5,7 @@ import { db } from '../../db/client.js';
 import { coupons, levels, products, rewards, shopSettings } from '../../db/schema.js';
 import { badRequest, isUniqueViolation, notFound } from '../../lib/errors.js';
 import { resolveMapsLink } from '../../lib/geo.js';
+import { mapsUsageThisMonth } from '../../services/mapsBudget.js';
 import { tr } from '../../lib/i18n.js';
 import { idParam, parse } from '../../lib/validate.js';
 import { makeGuards } from '../../plugins/auth.js';
@@ -162,6 +163,8 @@ export async function adminLoyaltyRoutes(app: FastifyInstance) {
       .returning();
     return { settings: s };
   });
+
+  app.get('/maps-usage', { preHandler: guard.staff }, async () => mapsUsageThisMonth());
 
   /** Turns a pasted Google Maps link (or "lat, lng") into a pin for the store-location map. */
   app.post('/settings/locate', { preHandler: guard.admin }, async (req) => {
