@@ -58,12 +58,34 @@ export async function notifyStaff(
 }
 
 let running = false;
+let rerun = false;
+let retryTimer: NodeJS.Timeout | null = null;
 let logger: Pick<FastifyBaseLogger, 'info' | 'warn' | 'error'> = console;
 
+/**
+ * Sending is event-driven (kickNotifications after each change) — no constant polling, so a
+ * serverless database (e.g. Neon) can pause when the shop is quiet. Only messages that failed for a
+ * temporary reason are retried, 30 s later.
+ */
+function scheduleDispatch(ms: number) {
+  if (!autoDispatch) return;
+  if (retryTimer) clearTimeout(retryTimer);
+  retryTimer = setTimeout(() => {
+    retryTimer = null;
+    void dispatchPending();
+  }, ms);
+  retryTimer.unref?.();
+}
+
 export async function dispatchPending(): Promise<number> {
-  if (running) return 0;
+  if (running) {
+    rerun = true; // a new message arrived mid-run: go again right after
+    return 0;
+  }
   running = true;
   let processed = 0;
+  let more = false;
+  let retryLater = false;
   try {
     // Claim a batch (SKIP LOCKED keeps concurrent dispatchers from grabbing the same rows).
     const { rows } = await db.execute<{
@@ -81,6 +103,7 @@ export async function dispatchPending(): Promise<number> {
         ORDER BY id LIMIT 25 FOR UPDATE SKIP LOCKED
       )
       RETURNING id, chat_id, kind, text, button_text, button_path, attempts`);
+    more = rows.length === 25;
 
     for (const n of rows) {
       processed++;
@@ -97,14 +120,22 @@ export async function dispatchPending(): Promise<number> {
         const permanent = err instanceof TelegramApiError && err.permanent;
         const message = err instanceof Error ? err.message : String(err);
         const status = permanent || n.attempts >= 5 ? 'failed' : 'pending';
+        if (status === 'pending') retryLater = true;
         await db.execute(sql`UPDATE notifications SET status = ${status}, last_error = ${message} WHERE id = ${n.id}`);
         logger.warn(`Telegram notification ${n.id} ${status}: ${message}`);
       }
     }
   } catch (err) {
     logger.error(err as Error, 'Notification dispatch failed');
+    retryLater = true;
   } finally {
     running = false;
+  }
+  if (rerun || more) {
+    rerun = false;
+    scheduleDispatch(100);
+  } else if (retryLater) {
+    scheduleDispatch(30_000);
   }
   return processed;
 }
@@ -122,9 +153,10 @@ export function kickNotifications() {
 
 export function startNotificationWorker(log: typeof logger) {
   logger = log;
-  const timer = setInterval(() => void dispatchPending(), 15_000);
-  timer.unref();
-  return () => clearInterval(timer);
+  return () => {
+    if (retryTimer) clearTimeout(retryTimer);
+    retryTimer = null;
+  };
 }
 
 /** Escape user-provided text for Telegram HTML parse mode. */

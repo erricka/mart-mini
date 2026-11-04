@@ -127,7 +127,7 @@ export async function copyDatabaseFrom(sourceUrl: string, log: Log = console.log
         );
       }
       await target.query('commit');
-      log(`✅ Copied ${total} rows from the old database. Remove COPY_FROM_DATABASE_URL now.`);
+      log(`✅ Copied ${total} rows from the old database — the move is complete.`);
       return { copied: true as const, rows: total };
     } catch (err) {
       await target.query('rollback').catch(() => {});

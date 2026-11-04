@@ -29,6 +29,11 @@ const schema = z.object({
    * this is set, every table is copied from here first. Remove it after the move.
    */
   COPY_FROM_DATABASE_URL: z.string().trim().optional().default(''),
+  /**
+   * Moving databases without touching DATABASE_URL: when set, the app uses this database and, on its
+   * first (empty) start, copies everything from DATABASE_URL — the current one.
+   */
+  NEW_DATABASE_URL: z.string().trim().optional().default(''),
   SESSION_SECRET: z.string().min(32, 'SESSION_SECRET must be at least 32 characters'),
   PUBLIC_URL: z
     .string()
@@ -93,8 +98,12 @@ export function telegramSafeSecret(secret: string): string {
   return /^[A-Za-z0-9_-]{1,256}$/.test(secret) ? secret : createHash('sha256').update(secret).digest('hex');
 }
 
+const moving = !!env.NEW_DATABASE_URL && env.NEW_DATABASE_URL !== env.DATABASE_URL;
+
 export const config = {
   ...env,
+  DATABASE_URL: env.NEW_DATABASE_URL || env.DATABASE_URL,
+  COPY_FROM_DATABASE_URL: env.COPY_FROM_DATABASE_URL || (moving ? env.DATABASE_URL : ''),
   isProd: env.NODE_ENV === 'production',
   isTest: env.NODE_ENV === 'test',
   devLoginEnabled: env.DEV_LOGIN_ENABLED && env.NODE_ENV !== 'production',

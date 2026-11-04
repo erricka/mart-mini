@@ -55,7 +55,9 @@ function useNewOrderAlerts(sound: boolean) {
     queryKey: ['admin', 'pulse'],
     queryFn: () => api<{ latestOrderId: number; newCount: number; activeCount: number }>('/admin/orders/pulse'),
     refetchInterval: 8000,
-    refetchIntervalInBackground: true,
+    // Only while the dashboard is on screen: a hidden tab lets the free server and database sleep
+    // (new-order alerts still arrive instantly through Telegram).
+    refetchIntervalInBackground: false,
   });
   useEffect(() => {
     const d = pulse.data;
