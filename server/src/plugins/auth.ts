@@ -57,7 +57,7 @@ export function makeGuards(app: FastifyInstance) {
     const claims = verify(app, req);
     if (claims.typ !== 'session') throw unauthorized(tr('err.finish_onboarding'));
     const [u] = await db.select().from(users).where(eq(users.id, claims.uid));
-    if (!u || u.isBlocked) throw unauthorized(tr('err.account_unavailable'));
+    if (!u || u.isBlocked || u.deletedAt) throw unauthorized(tr('err.account_unavailable'));
     req.account = u;
   };
   const staff = async (req: FastifyRequest) => {

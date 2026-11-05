@@ -6,6 +6,7 @@ import { api, errorMessage } from '../../lib/api';
 import { dateTime, money, shortDate } from '../../lib/format';
 import { translate, useT, type TKey } from '../../lib/i18n';
 import { STATUS_META } from '../../lib/status';
+import { confirmDialog } from '../../lib/telegram';
 import { toast } from '../../lib/toast';
 import type { Address, Level, OrderSummary, Role, User, WalletItem } from '../../lib/types';
 import { PageHeader, Td, Th, useIsAdmin } from './common';
@@ -94,6 +95,16 @@ export function CustomerDetail() {
     },
     onError: (e) => toast(errorMessage(e), 'error'),
   });
+  const navigate = useNavigate();
+  const remove = useMutation({
+    mutationFn: () => api(`/admin/customers/${id}`, { method: 'DELETE' }),
+    onSuccess: () => {
+      toast(t('ac.removed'), 'success');
+      qc.invalidateQueries({ queryKey: ['admin', 'customers'] });
+      navigate('/admin/customers', { replace: true });
+    },
+    onError: (e) => toast(errorMessage(e), 'error'),
+  });
   const setRole = useMutation({
     mutationFn: (role: Role) => api(`/admin/customers/${id}/role`, { method: 'PUT', body: { role } }),
     onSuccess: () => {
@@ -147,6 +158,23 @@ export function CustomerDetail() {
                   <option value="customer">{t('ad.role_customer')}</option><option value="staff">{t('ad.role_staff')}</option><option value="admin">{t('ad.role_admin')}</option>
                 </Select>
               </Field>
+            </Card>
+          )}
+
+          {isAdmin && c.role === 'customer' && (
+            <Card className="space-y-2 ring-1 ring-rose-200 dark:ring-rose-500/30">
+              <h2 className="font-bold text-rose-700 dark:text-rose-300">{t('ac.remove_title')}</h2>
+              <p className="text-xs text-muted">{t('ac.remove_text')}</p>
+              <Button
+                block
+                variant="danger"
+                loading={remove.isPending}
+                onClick={async () => {
+                  if (await confirmDialog(t('ac.remove_confirm', { name: `${c.firstName} ${c.lastName ?? ''}`.trim() }))) remove.mutate();
+                }}
+              >
+                {t('ac.remove_button')}
+              </Button>
             </Card>
           )}
 

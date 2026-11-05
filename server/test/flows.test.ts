@@ -37,7 +37,7 @@ function initData(user: TelegramUser, startParam?: string) {
   return signQuery(fields, TOKEN);
 }
 
-const call = async (method: 'GET' | 'POST' | 'PUT' | 'PATCH', url: string, token?: string, body?: unknown) => {
+const call = async (method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE', url: string, token?: string, body?: unknown) => {
   const res = await app.inject({ method, url, headers: token ? { authorization: `Bearer ${token}` } : {}, payload: body as object });
   return { status: res.statusCode, json: res.json() as any };
 };
@@ -605,5 +605,63 @@ describe('Google Maps budget (keeps Google free)', () => {
     const ok = await call('POST', '/api/maps/allow', adminToken, { kind: 'map' });
     expect(ok.status).toBe(200);
     expect(typeof ok.json.allowed).toBe('boolean');
+  });
+});
+
+describe('Removing a customer (admin)', () => {
+  const tg = { id: 9950, first_name: 'Rina', last_name: 'Ly', username: 'rina_ly' };
+  let token: string;
+  let userId: number;
+  let orderId: number;
+
+  beforeAll(async () => {
+    const r = await onboard(tg, '+855 12 995 000');
+    token = r.token;
+    userId = r.user.id;
+    await call('POST', '/api/me/addresses', token, { label: 'Home', line1: 'St 63, #8', city: 'Phnom Penh', lat: 11.55, lng: 104.92 });
+    const o = await order(token, { fulfillmentType: 'pickup', note: 'call me on arrival' });
+    orderId = o.json.order.id;
+  });
+
+  it('is refused while an order is in progress, for staff accounts, and for non-admins', async () => {
+    const busy = await call('DELETE', `/api/admin/customers/${userId}`, adminToken);
+    expect(busy.status).toBe(409);
+    expect(busy.json.error.code).toBe('active_orders');
+    expect((await call('DELETE', `/api/admin/customers/${userId}`, token)).status).toBe(403); // a customer can't
+    const staff = await onboard({ id: 9951, first_name: 'Staffy' }, '+855 12 995 001');
+    await db.update(users).set({ role: 'staff' }).where(eq(users.id, staff.user.id));
+    expect((await call('DELETE', `/api/admin/customers/${staff.user.id}`, staff.token)).status).toBe(403); // staff can't remove
+    expect((await call('DELETE', `/api/admin/customers/${staff.user.id}`, adminToken)).json.error.code).toBe('remove_staff');
+  });
+
+  it('wipes personal data, keeps the order anonymised, signs them out and hides them', async () => {
+    await call('POST', `/api/admin/orders/${orderId}/status`, adminToken, { status: 'cancelled', reason: 'test' });
+    const r = await call('DELETE', `/api/admin/customers/${userId}`, adminToken);
+    expect(r.status).toBe(200);
+
+    const [u] = await db.select().from(users).where(eq(users.id, userId));
+    expect(u).toMatchObject({ lastName: null, username: null, photoUrl: null, phone: null, pointsBalance: 0 });
+    expect(u.deletedAt).not.toBeNull();
+    expect(u.firstName).not.toBe('Rina');
+    const [o] = await db.select().from(orders).where(eq(orders.id, orderId));
+    expect(o.contactPhone).toBe('—');
+    expect(o.customerNote).toBeNull();
+    expect(o.totalCents).toBeGreaterThan(0); // the shop's record of the sale stays
+    expect(await db.select().from(sql`addresses`).where(sql`user_id = ${userId}`)).toHaveLength(0);
+
+    expect((await call('GET', '/api/me', token)).status).toBe(401); // signed out immediately
+    const list = await call('GET', '/api/admin/customers?q=Rina', adminToken);
+    expect(list.json.customers).toHaveLength(0);
+    expect((await call('GET', `/api/admin/customers/${userId}`, adminToken)).status).toBe(404);
+  });
+
+  it('a removed person can sign up again — but gets no second welcome gift', async () => {
+    const auth = await call('POST', '/api/auth/telegram', undefined, { initData: initData(tg, 'store') });
+    expect(auth.json.status).toBe('new'); // onboarding again
+    const done = await call('POST', '/api/onboarding/complete', auth.json.onboardingToken, { firstName: 'Rina', acceptPrivacy: true });
+    expect(done.status).toBe(200);
+    expect(done.json.user.id).toBe(userId); // same account, restored
+    expect(done.json.welcome).toBeNull();
+    expect(done.json.user.pointsBalance).toBe(0);
   });
 });

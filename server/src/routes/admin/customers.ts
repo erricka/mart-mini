@@ -9,6 +9,7 @@ import { badRequest, notFound } from '../../lib/errors.js';
 import { tr, userLang } from '../../lib/i18n.js';
 import { idParam, parse } from '../../lib/validate.js';
 import { makeGuards } from '../../plugins/auth.js';
+import { removeCustomer } from '../../services/customerRemoval.js';
 import { publicUser } from '../../services/identity.js';
 import { applyPoints, availableDiscounts, syncMilestones } from '../../services/loyalty.js';
 import { esc, kickNotifications, queueNotification } from '../../services/notifications.js';
@@ -37,7 +38,7 @@ export async function adminCustomerRoutes(app: FastifyInstance) {
       }),
       req.query,
     );
-    const where: SQL[] = [];
+    const where: SQL[] = [sql`${users.deletedAt} is null`]; // removed customers are hidden
     if (q.q) {
       const like = `%${q.q.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
       where.push(or(ilike(users.firstName, like), ilike(users.lastName, like), ilike(users.username, like), ilike(users.phone, like))!);
@@ -56,7 +57,7 @@ export async function adminCustomerRoutes(app: FastifyInstance) {
       .limit(q.limit)
       .offset(q.offset);
     const lv = await getLevels();
-    const [{ total }] = await db.select({ total: sql<number>`count(*)::int` }).from(users);
+    const [{ total }] = await db.select({ total: sql<number>`count(*)::int` }).from(users).where(sql`${users.deletedAt} is null`);
     return {
       total,
       customers: rows.map((r) => ({
@@ -73,7 +74,7 @@ export async function adminCustomerRoutes(app: FastifyInstance) {
   app.get('/customers/:id', { preHandler: guard.staff }, async (req) => {
     const { id } = parse(idParam, req.params);
     const [u] = await db.select().from(users).where(eq(users.id, id));
-    if (!u) throw notFound(tr('err.customer_not_found'));
+    if (!u || u.deletedAt) throw notFound(tr('err.customer_not_found'));
     const [addr, recentOrders, history, discounts, lv, [totals]] = await Promise.all([
       db.select().from(addresses).where(eq(addresses.userId, id)),
       db.select().from(orders).where(eq(orders.userId, id)).orderBy(desc(orders.placedAt)).limit(25),
@@ -141,6 +142,12 @@ export async function adminCustomerRoutes(app: FastifyInstance) {
     });
     kickNotifications();
     return result;
+  });
+
+  /** Admin: remove a customer (personal data wiped, past orders kept anonymised). */
+  app.delete('/customers/:id', { preHandler: guard.admin }, async (req) => {
+    const { id } = parse(idParam, req.params);
+    return removeCustomer(id, req.account!.id);
   });
 
   app.put('/customers/:id/role', { preHandler: guard.admin }, async (req) => {

@@ -102,12 +102,12 @@ const roundUp = (cents: number, currency: string) => {
 
 /**
  * Distance-based delivery pricing: base fare + per-km rate on the estimated road distance, with a
- * minimum fee, rounded up to a friendly amount. "Tomorrow" is a flat fee, never more than today.
+ * minimum fee, rounded up to a friendly amount. "Tomorrow" is a flat fee (Settings → next-day fee).
  */
 export function deliveryOptions(settings: PricingSettings, destination: LatLng | null, addressReady = false): DeliveryOptions {
   const store = settings.storeLat != null && settings.storeLng != null ? { lat: settings.storeLat, lng: settings.storeLng } : null;
-  const nextDay = (sameDay: number) =>
-    settings.nextDayEnabled ? Math.min(settings.nextDayFeeCents, sameDay) : null;
+  // "I can wait until tomorrow" is a flat fee (mart25: $2.00), whatever the distance.
+  const nextDay = (_sameDay: number) => (settings.nextDayEnabled ? settings.nextDayFeeCents : null);
   const none = { sameDayFeeCents: null, nextDayFeeCents: null };
   if (settings.deliveryPricing !== 'distance' || !store) {
     // Flat fee: the calculator needs an address (typed or saved) — or a pin — before showing a fee.

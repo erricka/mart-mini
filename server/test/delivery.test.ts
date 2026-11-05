@@ -41,11 +41,10 @@ describe('distance-based delivery fee', () => {
     expect(deliveryOptions(settings, north(0.05)).sameDayFeeCents).toBe(65);
   });
 
-  it('offers "tomorrow" for a flat $2, but never more than today', () => {
-    const far = deliveryOptions(settings, north(6));
-    expect(far.nextDayFeeCents).toBe(200);
-    const near = deliveryOptions(settings, north(1));
-    expect(near.nextDayFeeCents).toBe(75);
+  it('offers "tomorrow" for a flat $2 — the same for every address', () => {
+    expect(deliveryOptions(settings, north(6)).nextDayFeeCents).toBe(200);
+    expect(deliveryOptions(settings, north(1)).nextDayFeeCents).toBe(200); // nearby: still exactly $2
+    expect(deliveryOptions({ ...settings, deliveryMaxKm: null }, north(30)).nextDayFeeCents).toBe(200); // far away (no limit): still exactly $2
     expect(deliveryOptions({ ...settings, nextDayEnabled: false }, north(6)).nextDayFeeCents).toBeNull();
   });
 

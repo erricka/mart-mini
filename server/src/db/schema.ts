@@ -77,6 +77,11 @@ export const users = pgTable(
     privacyAcceptedAt: ts('privacy_accepted_at'),
     signupSource: text('signup_source'),
     isBlocked: boolean('is_blocked').notNull().default(false),
+    /**
+     * Set when an admin removes the customer: personal data is wiped, they're signed out and hidden,
+     * past orders stay (anonymised). If they come back they sign up again — without a second welcome gift.
+     */
+    deletedAt: ts('deleted_at'),
     createdAt: createdAt(),
     updatedAt: ts('updated_at').notNull().defaultNow(),
     lastSeenAt: ts('last_seen_at'),
@@ -202,7 +207,7 @@ export const shopSettings = pgTable(
     deliveryMinFeeCents: integer('delivery_min_fee_cents').notNull().default(63),
     /** Farthest delivery distance in km (road estimate). Null = deliver anywhere (mart25's choice). */
     deliveryMaxKm: integer('delivery_max_km'),
-    /** "I can wait until tomorrow" option with its own flat fee (never more than the same-day fee). */
+    /** "I can wait until tomorrow" option with its own flat fee — the same for every address. */
     nextDayEnabled: boolean('next_day_enabled').notNull().default(true),
     nextDayFeeCents: integer('next_day_fee_cents').notNull().default(200),
     pickupAddress: text('pickup_address').notNull().default(''),

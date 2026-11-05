@@ -50,6 +50,13 @@
       "when": 1793846157398,
       "tag": "0006_deliver_anywhere",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1793846398092,
+      "tag": "0007_remove_customers_no_free_delivery",
+      "breakpoints": true
     }
   ]
 }

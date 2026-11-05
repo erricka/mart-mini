@@ -178,8 +178,8 @@ You can now open **`https://t.me/<your_bot>?startapp=store`**, which is what the
 At checkout, customers choosing delivery **drop a pin on a map**: they move the map until the pin is on their door, or tap **📍 ប្រើទីតាំងខ្ញុំ (Use my location)**. The fee is worked out on the server from the distance between your store and that pin.
 
 - **Today (⚡ ថ្ងៃនេះ):** priced by distance: **base fare + price per km**, never below a **minimum fee**, rounded up to 5¢ (or 100៛). The distance is the straight line × 1.3, which approximates the road distance.
-- **Tomorrow (📅 ថ្ងៃស្អែក):** if the customer can wait until the next day, a flat **$2.00**. It's never more than the same-day price.
-- **Free delivery** follows one explicit rule: the basket's items reach **Free delivery from** (Dashboard → ការកំណត់ Settings → Delivery & pickup; e.g. `25.00`). Leave it empty to switch free delivery off. Free-delivery rewards also apply.
+- **Tomorrow (📅 ថ្ងៃស្អែក):** if the customer can wait until the next day, a flat **$2.00**, the same for every address.
+- **Free delivery is off.** mart25 doesn't offer it, so every delivery shows its real fee. To offer it later, set **Free delivery from** (Dashboard → ការកំណត់ Settings → Delivery & pickup, e.g. `25.00`). It then applies only once the address is confirmed and the basket reaches that amount. Free-delivery *rewards* from the loyalty program still apply when a customer uses one.
 - **The fee is never guessed.** Until the customer gives the location the calculator needs, checkout says *"Enter your delivery address to calculate the fee"*. That location is the map pin in distance mode, or a saved or typed address in flat-fee mode. Free delivery and $0 only appear after the location is validated **and** the basket meets the rule. Moving the pin or changing the basket recalculates the fee. While it recalculates, "Place order" waits. An address outside the delivery area, or a failed calculation, shows a message next to the address with *Try again* or *Choose pickup*, never a fee.
 - **The server re-checks everything before creating the order.** If the fee or total changed since the customer looked (for example, they edited the basket in another tab), the order is refused with *"The delivery fee or total changed…"*, and the summary refreshes.
 - **mart25 delivers everywhere:** there is no distance limit, and farther addresses simply cost more (base fare + price per km). If you ever want a limit, set **Farthest delivery (km)** in Settings → 🛵. Customers beyond it are then asked to choose pickup.
@@ -222,6 +222,33 @@ About 10 minutes. Google requires a billing account, but a small shop normally s
 Also set a [budget alert](https://console.cloud.google.com/billing/budgets) of $1, so Google emails you if anything is ever charged.
 
 This key is a *browser* key. It's visible in the page by design, and the website restriction from step 4 is what protects it. If the checkout still shows the OpenStreetMap map after you add the key, Google rejected it for this site. Check the restriction in step 4. The server log also reports any blocked Google requests (`CSP violation`).
+
+## Removing a customer
+
+Admins open **Dashboard → អតិថិជន (Customers) → the customer → 🗑️ Remove this customer**. Removing a customer:
+- deletes their name, phone, Telegram username, photo and saved addresses;
+- sets their points to 0 (recorded in the points history) and cancels unused rewards;
+- signs them out immediately and hides them from the customer list;
+- keeps past orders for your sales and stock records, but without their name, phone, address or note.
+
+You can't remove a customer while they have an order in progress (finish or cancel it first), and staff or admins can't be removed (change their role to Customer first). If the person opens the shop again, they sign up as normal but don't get a second welcome gift.
+
+## Keeping data secure
+
+- **Already in place:**
+  - Sign-in is verified with Telegram's signature.
+  - Sessions expire after 12 hours.
+  - Roles are re-checked on every request.
+  - Customers can only see their own orders.
+  - The dashboard is staff-only, and removing customers, settings and points are admin-only.
+  - Connections are encrypted: HTTPS for the site and TLS to the Neon database.
+  - No passwords or keys are stored in the GitHub repository; they live in Render → Environment.
+- **Do these once:**
+  1. **Delete the old Render database `mart25-db`.** It still holds a copy of your customer data.
+  2. **Reset the Neon password** (Neon → Roles → `neondb_owner` → Reset password) if it was ever shared, then update `DATABASE_URL` and `NEW_DATABASE_URL` in Render → Environment.
+  3. **Lock your Google Maps key** to `https://mart25.onrender.com/*` (see *Google Maps* above).
+- **Backups:** Neon keeps a short history you can restore from (Neon → *Backup & restore*). Export your data now and then for a copy you keep yourself.
+- **Updates:** run `npm audit` before deploying. The app's live dependencies currently have 0 known vulnerabilities.
 
 ## Payments
 

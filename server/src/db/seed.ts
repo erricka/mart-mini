@@ -196,7 +196,6 @@ async function insertBaseSettings(extra: Partial<typeof shopSettings.$inferInser
     taglineEn: 'Fresh groceries, rewards on every basket',
     currency: 'USD',
     deliveryFeeCents: 150,
-    freeDeliveryMinCents: 2500,
     minOrderCents: 500,
     pickupHours: '7:00 – 21:00',
     pointsPerDollar: 1,

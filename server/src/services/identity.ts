@@ -33,7 +33,7 @@ const isAdminTelegramId = (id: number) => config.ADMIN_TELEGRAM_IDS.includes(id)
 export async function resolveTelegramIdentity(tg: TelegramUser, startParam: string | null): Promise<IdentityResult> {
   const now = new Date();
   const [existing] = await db.select().from(users).where(eq(users.telegramId, tg.id));
-  if (existing) {
+  if (existing && !existing.deletedAt) {
     const [updated] = await db
       .update(users)
       .set({
@@ -47,7 +47,7 @@ export async function resolveTelegramIdentity(tg: TelegramUser, startParam: stri
     return { status: 'existing', user: updated };
   }
 
-  if (isAdminTelegramId(tg.id)) {
+  if (isAdminTelegramId(tg.id) && !existing) {
     await db
       .insert(users)
       .values({
@@ -149,6 +149,28 @@ export async function completeOnboarding(identity: OnboardingIdentity, input: Co
 
     if (!inserted.length) {
       const [user] = await tx.select().from(users).where(eq(users.telegramId, identity.telegramId));
+      if (user.deletedAt) {
+        // Removed earlier by the shop and now back: a fresh profile on the same account. Welcome
+        // gifts are once per account (and per phone), so none are given again.
+        const [restored] = await tx
+          .update(users)
+          .set({
+            firstName: firstName.slice(0, 64),
+            lastName: input.lastName?.trim().slice(0, 64) || null,
+            username: identity.username,
+            photoUrl: identity.photoUrl,
+            languageCode: parseLang(input.languageCode) ?? null,
+            phone: phone?.display ?? null,
+            phoneVerified: verified,
+            privacyAcceptedAt: now,
+            lastSeenAt: now,
+            deletedAt: null,
+            updatedAt: now,
+          })
+          .where(eq(users.id, user.id))
+          .returning();
+        return { user: restored, created: true, welcome: null };
+      }
       return { user, created: false, welcome: null };
     }
 
