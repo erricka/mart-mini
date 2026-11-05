@@ -41,7 +41,7 @@ export async function adminOrderRoutes(app: FastifyInstance) {
       .select({
         order: orders,
         username: users.username,
-        items: sql<number>`(select coalesce(sum(quantity),0)::int from order_items oi where oi.order_id = ${orders.id})`,
+        items: sql<number>`(select coalesce(sum(quantity),0)::int from order_items oi where oi.order_id = "orders"."id")`,
       })
       .from(orders)
       .innerJoin(users, eq(users.id, orders.userId))

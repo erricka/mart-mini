@@ -8,6 +8,7 @@ import {
   doublePrecision,
   index,
   integer,
+  jsonb,
   pgEnum,
   pgTable,
   primaryKey,
@@ -163,9 +164,10 @@ export const inventoryMovements = pgTable(
   'inventory_movements',
   {
     id: serial('id').primaryKey(),
+    // A deleted product takes its stock history with it.
     productId: integer('product_id')
       .notNull()
-      .references(() => products.id),
+      .references(() => products.id, { onDelete: 'cascade' }),
     delta: integer('delta').notNull(),
     stockAfter: integer('stock_after').notNull(),
     reason: inventoryReasonEnum('reason').notNull(),
@@ -256,7 +258,7 @@ export const coupons = pgTable(
     discountType: discountTypeEnum('discount_type').notNull(),
     /** Percent (1-100) for percent coupons, cents for fixed coupons. */
     value: integer('value').notNull().default(0),
-    freeProductId: integer('free_product_id').references(() => products.id),
+    freeProductId: integer('free_product_id').references(() => products.id, { onDelete: 'set null' }),
     minSubtotalCents: integer('min_subtotal_cents').notNull().default(0),
     maxDiscountCents: integer('max_discount_cents'),
     startsAt: ts('starts_at'),
@@ -400,9 +402,8 @@ export const orderItems = pgTable(
     orderId: integer('order_id')
       .notNull()
       .references(() => orders.id, { onDelete: 'cascade' }),
-    productId: integer('product_id')
-      .notNull()
-      .references(() => products.id),
+    // Null once the product is deleted — the order keeps its own copy of name, price and photo.
+    productId: integer('product_id').references(() => products.id, { onDelete: 'set null' }),
     name: text('name').notNull(),
     nameEn: text('name_en'),
     unit: text('unit').notNull().default(''),
@@ -576,3 +577,10 @@ export const mapsUsage = pgTable(
   },
   (t) => [primaryKey({ columns: [t.day, t.kind] })],
 );
+
+/** One-off maintenance tasks that already ran (each runs once, see services/maintenance.ts). */
+export const maintenanceRuns = pgTable('maintenance_runs', {
+  name: text('name').primaryKey(),
+  ranAt: ts('ran_at').notNull().defaultNow(),
+  result: jsonb('result'),
+});

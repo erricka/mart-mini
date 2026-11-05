@@ -47,9 +47,9 @@ export async function adminCustomerRoutes(app: FastifyInstance) {
     const rows = await db
       .select({
         user: users,
-        orderCount: sql<number>`(select count(*)::int from orders o where o.user_id = ${users.id})`,
+        orderCount: sql<number>`(select count(*)::int from orders o where o.user_id = "users"."id")`,
         spentCents: sql<number>`(select coalesce(sum(o.total_cents),0)::int from orders o where o.user_id = ${users.id} and o.status in ('delivered','collected') and o.payment_status <> 'refunded')`,
-        lastOrderAt: sql<Date | null>`(select max(o.placed_at) from orders o where o.user_id = ${users.id})`,
+        lastOrderAt: sql<Date | null>`(select max(o.placed_at) from orders o where o.user_id = "users"."id")`,
       })
       .from(users)
       .where(where.length ? and(...where) : undefined)

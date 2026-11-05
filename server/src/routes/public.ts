@@ -199,7 +199,7 @@ export async function publicRoutes(app: FastifyInstance) {
       .select()
       .from(products)
       .where(and(...where))
-      .orderBy(desc(gt(products.stock, 0)), sql`(select c.sort_order from categories c where c.id = ${products.categoryId})`, asc(products.name))
+      .orderBy(desc(gt(products.stock, 0)), sql`(select c.sort_order from categories c where c.id = "products"."category_id")`, asc(products.name))
       .limit(q.limit);
     return { products: rows.map(publicProduct) };
   });

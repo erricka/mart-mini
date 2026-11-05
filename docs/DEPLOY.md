@@ -193,6 +193,14 @@ There are three ways to add photos. All of them shrink the photo in the browser 
 
 You can also put `https://` photo links in the `image_url` column before importing.
 
+### Deleting products and categories (admins)
+
+- **One product:** Catalog → **Edit** → **Delete product**.
+- **Many products:** tick them in the Catalog list, or tick the box in the header to select every product in the current list. Then use **Delete** in the bar at the bottom. To remove an upload you didn't mean to make, set **Added: today** (or yesterday / last 7 days) first.
+- **A category:** Catalog → **Categories** → the bin icon. The confirmation says how many of its products will be deleted with it.
+
+Deleting is permanent and only admins can do it. Past orders keep their own copy of each item (name, price, photo), so receipts and sales reports don't change. Stock history of a deleted product is removed. A coupon that gave a deleted product as a free gift is switched off.
+
 ## Delivery fee by distance (map)
 
 At checkout, customers choosing delivery **drop a pin on a map**: they move the map until the pin is on their door, or tap **📍 ប្រើទីតាំងខ្ញុំ (Use my location)**. The fee is worked out on the server from the distance between your store and that pin.

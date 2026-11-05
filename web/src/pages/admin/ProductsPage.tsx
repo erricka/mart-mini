@@ -1,6 +1,6 @@
-import { Camera, FileSpreadsheet, ImageOff, Images, PackageOpen, Plus, SearchX } from 'lucide-react';
+import { Camera, FileSpreadsheet, ImageOff, Images, PackageOpen, Plus, SearchX, Trash2 } from 'lucide-react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ProductImage } from '../../components/ProductImage';
 import { Badge, Button, Card, cx, EmptyState, ErrorState, Field, Input, Notice, Select, Sheet, Skeleton, Spinner, Textarea, Toggle } from '../../components/ui';
 import { api, errorMessage } from '../../lib/api';
@@ -8,7 +8,7 @@ import { dateTime, fromCents, money, toCents } from '../../lib/format';
 import { shrinkImage, uploadProductPhoto } from '../../lib/image';
 import { toast } from '../../lib/toast';
 import { translate, useT, type TKey } from '../../lib/i18n';
-import { PageHeader, Td, Th } from './common';
+import { PageHeader, Td, Th, useIsAdmin } from './common';
 import { ImportProducts } from './ImportProducts';
 import { PhotoUploads } from './PhotoUploads';
 
@@ -96,19 +96,47 @@ function Products({ onNew, onImport }: { onNew: () => void; onImport: () => void
   const [categoryId, setCategoryId] = useState('');
   const [stock, setStock] = useState<'all' | 'low' | 'out'>('all');
   const [noPhoto, setNoPhoto] = useState(false);
+  const [added, setAdded] = useState<'all' | 'today' | 'yesterday' | 'week'>('all');
   const [editing, setEditing] = useState<Partial<AdminProduct> | null>(null);
   const [stockFor, setStockFor] = useState<AdminProduct | null>(null);
+  // Selecting products to delete them together (admins only).
+  const isAdmin = useIsAdmin();
+  const qc = useQueryClient();
+  const [selected, setSelected] = useState<Set<number>>(new Set());
+  const [confirmBulk, setConfirmBulk] = useState(false);
   const cats = useAdminCategories();
   const params = new URLSearchParams({ stock });
   if (noPhoto) params.set('photo', 'missing');
+  if (added !== 'all') params.set('added', added);
   if (q.trim()) params.set('q', q.trim());
   if (categoryId) params.set('categoryId', categoryId);
   const list = useQuery({
-    queryKey: ['admin', 'products', q.trim(), categoryId, stock, noPhoto],
-    queryFn: () => api<{ products: AdminProduct[]; summary: { total: number; out: number; low: number; noPhoto: number } }>(`/admin/products?${params}`),
+    queryKey: ['admin', 'products', q.trim(), categoryId, stock, noPhoto, added],
+    queryFn: () => api<{ products: AdminProduct[]; summary: { total: number; out: number; low: number; noPhoto: number; addedToday: number } }>(`/admin/products?${params}`),
     placeholderData: (p) => p,
   });
   const catOf = (id: number) => cats.data?.find((c) => c.id === id);
+  // A new filter starts a new selection.
+  useEffect(() => setSelected(new Set()), [q, categoryId, stock, noPhoto, added]);
+  const shown = list.data?.products ?? [];
+  const allSelected = shown.length > 0 && shown.every((p) => selected.has(p.id));
+  const toggle = (id: number) =>
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  const bulkDelete = useMutation({
+    mutationFn: () => api<{ deleted: number; couponsDisabled: number }>('/admin/products/delete', { body: { ids: [...selected] } }),
+    onSuccess: (r) => {
+      toast(t('ap.deleted_n', { n: r.deleted }) + (r.couponsDisabled ? ` · ${t('ap.coupons_off', { n: r.couponsDisabled })}` : ''), 'success');
+      setSelected(new Set());
+      setConfirmBulk(false);
+      for (const k of [['admin', 'products'], ['admin', 'categories'], ['products'], ['categories']]) qc.invalidateQueries({ queryKey: k });
+    },
+    onError: (e) => toast(errorMessage(e), 'error'),
+  });
 
   return (
     <>
@@ -117,6 +145,12 @@ function Products({ onNew, onImport }: { onNew: () => void; onImport: () => void
         <Select value={categoryId} onChange={(e) => setCategoryId(e.target.value)} className="max-w-56 py-2">
           <option value="">{t('ap.all_categories')}</option>
           {cats.data?.map((c) => <option key={c.id} value={c.id}>{c.emoji} {c.name}</option>)}
+        </Select>
+        <Select value={added} onChange={(e) => setAdded(e.target.value as typeof added)} className="max-w-56 py-2" aria-label={t('ap.added_any')}>
+          <option value="all">{t('ap.added_any')}</option>
+          <option value="today">{t('ap.added_today', { n: list.data?.summary.addedToday ?? 0 })}</option>
+          <option value="yesterday">{t('ap.added_yesterday')}</option>
+          <option value="week">{t('ap.added_week')}</option>
         </Select>
         {(['all', 'low', 'out'] as const).map((s) => (
           <button key={s} onClick={() => setStock(s)} className={cx('rounded-full px-3 py-1.5 text-sm font-medium', stock === s ? 'bg-brand text-brand-ink' : 'bg-surface ring-1 ring-line')}>
@@ -146,12 +180,17 @@ function Products({ onNew, onImport }: { onNew: () => void; onImport: () => void
       ) : (
         <Card className="overflow-x-auto p-0">
           <table className="w-full text-sm">
-            <thead className="border-b border-line"><tr><Th>{t('ap.col_product')}</Th><Th className="hidden md:table-cell">{t('ap.col_category')}</Th><Th>{t('ap.col_price')}</Th><Th>{t('ap.col_stock')}</Th><Th className="hidden sm:table-cell">{t('ap.col_status')}</Th><Th /></tr></thead>
+            <thead className="border-b border-line"><tr>{isAdmin && <Th className="w-10"><input type="checkbox" className="h-4 w-4 accent-[var(--brand)]" checked={allSelected} onChange={() => setSelected(allSelected ? new Set() : new Set(shown.map((p) => p.id)))} aria-label={t('ap.select_all')} title={t('ap.select_all')} /></Th>}<Th>{t('ap.col_product')}</Th><Th className="hidden md:table-cell">{t('ap.col_category')}</Th><Th>{t('ap.col_price')}</Th><Th>{t('ap.col_stock')}</Th><Th className="hidden sm:table-cell">{t('ap.col_status')}</Th><Th /></tr></thead>
             <tbody className="divide-y divide-line">
               {list.data!.products.map((p) => {
                 const c = catOf(p.categoryId);
                 return (
-                  <tr key={p.id} className={cx(!p.active && 'opacity-60')}>
+                  <tr key={p.id} className={cx(!p.active && 'opacity-60', selected.has(p.id) && 'bg-brand/5')}>
+                    {isAdmin && (
+                      <Td className="w-10">
+                        <input type="checkbox" className="h-4 w-4 accent-[var(--brand)]" checked={selected.has(p.id)} onChange={() => toggle(p.id)} aria-label={p.name} />
+                      </Td>
+                    )}
                     <Td>
                       <div className="flex items-center gap-3">
                         <div className="relative w-11 shrink-0">
@@ -182,6 +221,28 @@ function Products({ onNew, onImport }: { onNew: () => void; onImport: () => void
           </table>
         </Card>
       )}
+      {/* Selection bar: what's selected and the one action for it. */}
+      {selected.size > 0 && (
+        <div className="sticky bottom-4 z-20 mt-3 flex items-center justify-between gap-3 rounded-2xl bg-surface px-4 py-3 shadow-lg ring-1 ring-line">
+          <span className="text-sm font-semibold">{t('ap.selected', { n: selected.size })}</span>
+          <div className="flex gap-2">
+            <Button size="sm" variant="ghost" onClick={() => setSelected(new Set())}>{t('ap.clear_selection')}</Button>
+            <Button size="sm" variant="danger" onClick={() => setConfirmBulk(true)}>
+              <Trash2 className="h-4 w-4" />
+              {t('common.delete')}
+            </Button>
+          </div>
+        </div>
+      )}
+      <ConfirmDelete
+        open={confirmBulk}
+        title={t('ap.delete_title_n', { n: selected.size })}
+        text={t('ap.delete_text')}
+        confirmLabel={t('ap.delete_confirm_n', { n: selected.size })}
+        busy={bulkDelete.isPending}
+        onConfirm={() => bulkDelete.mutate()}
+        onClose={() => setConfirmBulk(false)}
+      />
       <ProductEditor product={editing} categories={cats.data ?? []} onClose={() => setEditing(null)} />
       <StockSheet product={stockFor} onClose={() => setStockFor(null)} />
     </>
@@ -195,10 +256,23 @@ function ProductEditor({ product, categories, onClose }: { product: Partial<Admi
   const [form, setForm] = useState<Record<string, any>>({});
   const [loaded, setLoaded] = useState<Partial<AdminProduct> | null>(null);
   const [uploading, setUploading] = useState(false);
+  const isAdmin = useIsAdmin();
+  const [confirmDelete, setConfirmDelete] = useState(false);
   if (product !== loaded) {
     setLoaded(product);
+    setConfirmDelete(false);
     setForm(product ? { ...product, price: fromCents(product.priceCents), compareAt: fromCents(product.compareAtCents), initialStock: '0' } : {});
   }
+  const remove = useMutation({
+    mutationFn: () => api<{ deleted: number; couponsDisabled: number }>(`/admin/products/${form.id}`, { method: 'DELETE' }),
+    onSuccess: (r) => {
+      toast(t('ap.deleted_n', { n: r.deleted }) + (r.couponsDisabled ? ` · ${t('ap.coupons_off', { n: r.couponsDisabled })}` : ''), 'success');
+      for (const k of [['admin', 'products'], ['admin', 'categories'], ['products'], ['categories']]) qc.invalidateQueries({ queryKey: k });
+      setConfirmDelete(false);
+      onClose();
+    },
+    onError: (e) => toast(errorMessage(e), 'error'),
+  });
   const set = (k: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => setForm({ ...form, [k]: e.target.value });
   const priceCents = toCents(form.price ?? '');
   const save = useMutation({
@@ -275,6 +349,21 @@ function ProductEditor({ product, categories, onClose }: { product: Partial<Admi
         </div>
       </div>
       <Button block size="lg" className="mt-5" loading={save.isPending} disabled={!form.name || priceCents == null || !form.categoryId} onClick={() => save.mutate()}>{t('ap.save')}</Button>
+      {isAdmin && form.id && (
+        <Button block variant="ghost" className="mt-2 text-rose-600" onClick={() => setConfirmDelete(true)}>
+          <Trash2 className="h-4 w-4" />
+          {t('ap.delete_product')}
+        </Button>
+      )}
+      <ConfirmDelete
+        open={confirmDelete}
+        title={t('ap.delete_title_one')}
+        text={t('ap.delete_text')}
+        confirmLabel={t('ap.delete_product')}
+        busy={remove.isPending}
+        onConfirm={() => remove.mutate()}
+        onClose={() => setConfirmDelete(false)}
+      />
     </Sheet>
   );
 }
@@ -338,7 +427,18 @@ function Categories() {
   const { t } = useT();
   const qc = useQueryClient();
   const cats = useAdminCategories();
+  const isAdmin = useIsAdmin();
   const [editing, setEditing] = useState<Partial<AdminCategory> | null>(null);
+  const [deleting, setDeleting] = useState<AdminCategory | null>(null);
+  const remove = useMutation({
+    mutationFn: (c: AdminCategory) => api<{ deleted: number; category: string }>(`/admin/categories/${c.id}?withProducts=true`, { method: 'DELETE' }),
+    onSuccess: (r) => {
+      toast(t('ap.cat_deleted', { name: r.category }) + (r.deleted ? ` · ${t('ap.deleted_n', { n: r.deleted })}` : ''), 'success');
+      for (const k of [['admin', 'products'], ['admin', 'categories'], ['products'], ['categories']]) qc.invalidateQueries({ queryKey: k });
+      setDeleting(null);
+    },
+    onError: (e) => toast(errorMessage(e), 'error'),
+  });
   const save = useMutation({
     mutationFn: (c: Partial<AdminCategory>) => {
       const body = { name: c.name, nameEn: c.nameEn || null, emoji: c.emoji || '🛒', color: c.color || '#22c55e', sortOrder: Number(c.sortOrder) || 0, active: c.active ?? true };
@@ -363,9 +463,23 @@ function Categories() {
             <div className="grid h-12 w-12 place-items-center rounded-2xl text-2xl" style={{ background: `${c.color}26` }}>{c.emoji}</div>
             <div className="min-w-0 flex-1"><div className="font-bold">{c.name}</div><div className="text-xs text-muted">{c.nameEn ? `${c.nameEn} · ` : ''}{t('ap.cat_products', { n: c.productCount })}{!c.active ? t('ap.cat_hidden') : ''}</div></div>
             <Button size="sm" variant="secondary" onClick={() => setEditing(c)}>{t('common.edit')}</Button>
+            {isAdmin && (
+              <button onClick={() => setDeleting(c)} className="grid h-9 w-9 shrink-0 place-items-center rounded-xl text-muted hover:bg-rose-50 hover:text-rose-600" aria-label={t('ap.delete_category')} title={t('ap.delete_category')}>
+                <Trash2 className="h-4 w-4" />
+              </button>
+            )}
           </Card>
         ))}
       </div>
+      <ConfirmDelete
+        open={!!deleting}
+        title={t('ap.cat_delete_title', { name: deleting?.name ?? '' })}
+        text={deleting?.productCount ? t('ap.cat_delete_with', { n: deleting.productCount }) : t('ap.cat_delete_empty')}
+        confirmLabel={deleting?.productCount ? t('ap.cat_delete_confirm_with', { n: deleting.productCount }) : t('ap.cat_delete_confirm')}
+        busy={remove.isPending}
+        onConfirm={() => deleting && remove.mutate(deleting)}
+        onClose={() => setDeleting(null)}
+      />
       <Sheet open={!!editing} onClose={() => setEditing(null)} title={editing?.id ? t('ap.edit_category') : t('ap.new_category_title')}>
         {editing && (
           <div className="space-y-3">
@@ -421,5 +535,24 @@ function QuickPhoto({ productId }: { productId: number }) {
         {busy ? <Spinner className="h-3 w-3" /> : <Camera className="h-3.5 w-3.5" />}
       </button>
     </>
+  );
+}
+
+/** "Are you sure?" for deleting — says what happens, one red button, one way out. */
+function ConfirmDelete({ open, title, text, confirmLabel, busy, onConfirm, onClose }: { open: boolean; title: string; text: string; confirmLabel: string; busy: boolean; onConfirm: () => void; onClose: () => void }) {
+  const { t } = useT();
+  return (
+    <Sheet open={open} onClose={onClose} title={title}>
+      <p className="text-sm text-muted">{text}</p>
+      <div className="mt-5 grid gap-2">
+        <Button block size="lg" variant="danger" loading={busy} onClick={onConfirm}>
+          <Trash2 className="h-4 w-4" />
+          {confirmLabel}
+        </Button>
+        <Button block variant="ghost" onClick={onClose}>
+          {t('common.cancel')}
+        </Button>
+      </div>
+    </Sheet>
   );
 }

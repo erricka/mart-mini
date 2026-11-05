@@ -6,6 +6,7 @@ import { runMigrations } from './db/migrate.js';
 import { seedStarter } from './db/seed.js';
 import { configureBot } from './services/bot.js';
 import { importDiskPhotos } from './services/media.js';
+import { runMaintenance } from './services/maintenance.js';
 import { ensureStoreLocation } from './services/settings.js';
 import { dispatchPending, startNotificationWorker } from './services/notifications.js';
 
@@ -17,6 +18,8 @@ if (config.COPY_FROM_DATABASE_URL) await copyDatabaseFrom(config.COPY_FROM_DATAB
 if (config.SEED_ON_START === 'starter') await seedStarter();
 
 const app = await buildApp();
+// One-off clean-ups asked for by the owner (once, in one transaction: on error nothing changes and it retries next start).
+await runMaintenance(app.log).catch((err) => app.log.error({ err }, 'One-off clean-up failed — nothing was changed'));
 const stopWorker = startNotificationWorker(app.log);
 // Bot setup talks to Telegram; a problem there must never stop the shop from starting.
 const stopBot = await configureBot(app.log).catch((err) => {

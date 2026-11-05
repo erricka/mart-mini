@@ -4,7 +4,7 @@
  * cancellation and access control.
  */
 import { randomUUID } from 'node:crypto';
-import { eq, sql } from 'drizzle-orm';
+import { eq, inArray, sql } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { buildApp } from '../src/app.js';
@@ -825,5 +825,119 @@ describe('Product photos', () => {
     expect(rep.json.rows[0]).toMatchObject({ action: 'update', changes: ['imageUrl'] });
     const [replaced] = await db.select().from(products).where(eq(products.sku, 'PHOTO-003'));
     expect(replaced.imageUrl).toBe(photo);
+  });
+});
+
+describe('Dashboard counts', () => {
+  it('shows the real number of products per category and orders per customer', async () => {
+    const cats = await call('GET', '/api/admin/categories', adminToken);
+    for (const c of cats.json.categories) {
+      const [{ n }] = await db.select({ n: sql<number>`count(*)::int` }).from(products).where(eq(products.categoryId, c.id));
+      expect(c.productCount).toBe(n);
+    }
+    const customers = await call('GET', '/api/admin/customers', adminToken);
+    const list = customers.json.customers ?? customers.json.rows;
+    expect(list.length).toBeGreaterThan(0);
+    for (const c of list) {
+      const [{ n }] = await db.select({ n: sql<number>`count(*)::int` }).from(orders).where(eq(orders.userId, c.id));
+      expect(c.orderCount).toBe(n);
+    }
+  });
+});
+
+describe('Deleting products and categories', () => {
+  const newProduct = async (categoryId: number, name: string, over: Partial<typeof products.$inferInsert> = {}) =>
+    (await db.insert(products).values({ categoryId, name, priceCents: 300, stock: 20, ...over }).returning())[0];
+
+  it('is admin-only', async () => {
+    const [cat] = await db.select().from(categories).limit(1);
+    const p = await newProduct(cat.id, 'Staff cannot delete me');
+    const staff = await onboard({ id: 9810, first_name: 'Staffer' }, '+85599000810');
+    await db.update(users).set({ role: 'staff' }).where(eq(users.id, staff.user.id));
+    expect((await call('DELETE', `/api/admin/products/${p.id}`, staff.token)).status).toBe(403);
+    expect((await call('POST', '/api/admin/products/delete', staff.token, { ids: [p.id] })).status).toBe(403);
+    expect((await call('DELETE', `/api/admin/categories/${cat.id}`, staff.token)).status).toBe(403);
+    expect((await db.select().from(products).where(eq(products.id, p.id))).length).toBe(1);
+  });
+
+  it('removes a product for good while past orders keep their lines, and cancelling such an order still works', async () => {
+    const [cat] = await db.select().from(categories).limit(1);
+    const p = await newProduct(cat.id, 'Old soap');
+    const c = await onboard({ id: 9811, first_name: 'Buyer' }, '+85599000811');
+    const placed = await order(c.token, { items: [{ productId: p.id, quantity: 2 }] });
+    expect(placed.status).toBe(201);
+    const orderId = placed.json.order.id;
+
+    const del = await call('DELETE', `/api/admin/products/${p.id}`, adminToken);
+    expect(del.status).toBe(200);
+    expect(del.json).toMatchObject({ deleted: 1 });
+    expect((await db.select().from(products).where(eq(products.id, p.id))).length).toBe(0);
+    expect((await db.select().from(inventoryMovements).where(eq(inventoryMovements.productId, p.id))).length).toBe(0);
+
+    const detail = await call('GET', `/api/orders/${orderId}`, c.token);
+    expect(detail.json.order.items[0]).toMatchObject({ name: 'Old soap', quantity: 2, productId: null });
+    const cancelled = await call('POST', `/api/orders/${orderId}/cancel`, c.token, { reason: 'test' });
+    expect(cancelled.json.order.status).toBe('cancelled');
+    expect((await call('DELETE', `/api/admin/products/${p.id}`, adminToken)).status).toBe(404);
+  });
+
+  it('deletes many at once and switches off a coupon whose free gift was deleted', async () => {
+    const [cat] = await db.select().from(categories).limit(1);
+    const a = await newProduct(cat.id, 'Bulk A');
+    const b = await newProduct(cat.id, 'Bulk B');
+    const [gift] = await db.insert(coupons).values({ title: 'Free Bulk A', discountType: 'free_product', freeProductId: a.id, perCustomerLimit: null }).returning();
+    const r = await call('POST', '/api/admin/products/delete', adminToken, { ids: [a.id, b.id, a.id] });
+    expect(r.json).toMatchObject({ deleted: 2, couponsDisabled: 1 });
+    const [after] = await db.select().from(coupons).where(eq(coupons.id, gift.id));
+    expect(after).toMatchObject({ active: false, freeProductId: null });
+  });
+
+  it('never empties a category by surprise: asks first, then deletes the category with its products', async () => {
+    const [cat] = await db.insert(categories).values({ name: 'Frozen', slug: 'frozen-test' }).returning();
+    await newProduct(cat.id, 'Ice cream');
+    await newProduct(cat.id, 'Frozen peas');
+    const ask = await call('DELETE', `/api/admin/categories/${cat.id}`, adminToken);
+    expect(ask.status).toBe(409);
+    expect(ask.json.error).toMatchObject({ code: 'category_has_products', details: { products: 2 } });
+    const ok = await call('DELETE', `/api/admin/categories/${cat.id}?withProducts=true`, adminToken);
+    expect(ok.json).toMatchObject({ deleted: 2, category: 'Frozen' });
+    expect((await db.select().from(categories).where(eq(categories.id, cat.id))).length).toBe(0);
+    const [empty] = await db.insert(categories).values({ name: 'Empty', slug: 'empty-test' }).returning();
+    expect((await call('DELETE', `/api/admin/categories/${empty.id}`, adminToken)).json).toMatchObject({ deleted: 0 });
+  });
+
+  it('finds products added today, yesterday or this week', async () => {
+    const [cat] = await db.select().from(categories).limit(1);
+    const old = await newProduct(cat.id, 'Added last month', { createdAt: new Date(Date.now() - 30 * 864e5) });
+    const today = await call('GET', '/api/admin/products?added=today', adminToken);
+    expect(today.json.products.some((p: any) => p.id === old.id)).toBe(false);
+    expect(today.json.products.length).toBeGreaterThan(0);
+    expect(today.json.summary.addedToday).toBe(today.json.products.length);
+    const all = await call('GET', '/api/admin/products', adminToken);
+    expect(all.json.products.some((p: any) => p.id === old.id)).toBe(true);
+  });
+});
+
+describe('One-off clean-up of 5 Nov 2026', () => {
+  it('removes the 03:29 import batch only when it is exactly 254 products, and the starter food categories', async () => {
+    const { runMaintenance } = await import('../src/services/maintenance.js');
+    const log = { info: () => {}, error: () => {} } as any;
+    const [soap] = await db.insert(categories).values({ name: 'សាប៊ូ', slug: 'soap-test' }).returning();
+    const at = new Date('2026-11-05T03:29:18.123Z');
+    const batch = await db
+      .insert(products)
+      .values(Array.from({ length: 254 }, (_, i) => ({ categoryId: soap.id, name: `POS ${i}`, sku: `POS-${i}`, priceCents: 100, createdAt: at })))
+      .returning({ id: products.id });
+    const keep = (await db.insert(products).values({ categoryId: soap.id, name: 'Added later', priceCents: 100, createdAt: new Date('2026-11-05T05:00:00Z') }).returning())[0];
+    const [household] = await db.insert(categories).values({ name: 'Household', slug: 'household' }).returning();
+
+    const result = await runMaintenance(log, { force: true });
+    expect(result).toMatchObject({ batch: { removed: 254 }, foodCategories: ['Fresh Produce'] });
+    expect((await db.select().from(products).where(inArray(products.id, batch.map((b) => b.id)))).length).toBe(0);
+    expect((await db.select().from(products).where(eq(products.id, keep.id))).length).toBe(1);
+    expect((await db.select().from(categories).where(eq(categories.slug, 'fresh-produce'))).length).toBe(0);
+    expect((await db.select().from(categories).where(eq(categories.id, household.id))).length).toBe(1);
+    // Runs once only.
+    expect(await runMaintenance(log, { force: true })).toBeNull();
   });
 });

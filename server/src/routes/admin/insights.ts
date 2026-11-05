@@ -48,12 +48,12 @@ export async function adminInsightRoutes(app: FastifyInstance) {
         from d order by d.day`),
     );
 
-    const topProducts = rows<{ product_id: number; name: string; emoji: string; quantity: number; revenue_cents: number }>(
+    const topProducts = rows<{ product_id: number | null; name: string; emoji: string; quantity: number; revenue_cents: number }>(
       await db.execute(sql`
         select oi.product_id, max(oi.name) as name, max(oi.emoji) as emoji, sum(oi.quantity)::int as quantity, sum(oi.line_total_cents)::int as revenue_cents
         from order_items oi join orders o on o.id = oi.order_id
         where o.status in ('delivered','collected') and o.payment_status <> 'refunded' and not oi.is_gift and o.completed_at >= ${since}
-        group by oi.product_id order by quantity desc, revenue_cents desc limit 8`),
+        group by oi.product_id, case when oi.product_id is null then oi.name end order by quantity desc, revenue_cents desc limit 8`),
     );
 
     const openByStatus = rows<{ status: string; n: number }>(

@@ -57,6 +57,13 @@
       "when": 1793846398092,
       "tag": "0007_remove_customers_no_free_delivery",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1793865989267,
+      "tag": "0008_product_delete",
+      "breakpoints": true
     }
   ]
 }

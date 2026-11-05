@@ -4,12 +4,22 @@ import { z } from 'zod';
 import { config } from '../../config.js';
 import { db } from '../../db/client.js';
 import { categories, inventoryMovements, products } from '../../db/schema.js';
-import { badRequest, isUniqueViolation, notFound } from '../../lib/errors.js';
+import { badRequest, conflict, isUniqueViolation, notFound } from '../../lib/errors.js';
 import { tr } from '../../lib/i18n.js';
 import { idParam, parse } from '../../lib/validate.js';
 import { makeGuards } from '../../plugins/auth.js';
 import { importProducts, importSchema } from '../../services/productImport.js';
 import { isPhotoUrl, saveMedia } from '../../services/media.js';
+import { deleteCategory, deleteProducts, productCountIn } from '../../services/catalogDelete.js';
+
+/** When a product was added, by day in the shop's time zone (Cambodia). */
+const SHOP_TZ = 'Asia/Phnom_Penh';
+const addedDaysAgo = sql`((now() at time zone ${SHOP_TZ})::date - (${products.createdAt} at time zone ${SHOP_TZ})::date)`;
+const ADDED: Record<'today' | 'yesterday' | 'week', SQL> = {
+  today: sql`${addedDaysAgo} = 0`,
+  yesterday: sql`${addedDaysAgo} = 1`,
+  week: sql`${addedDaysAgo} between 0 and 6`,
+};
 
 const productInput = z.object({
   categoryId: z.number().int().positive(),
@@ -75,6 +85,8 @@ export async function adminCatalogRoutes(app: FastifyInstance) {
         stock: z.enum(['all', 'low', 'out']).default('all'),
         /** 'missing' = products without a photo (to photograph them one by one). */
         photo: z.enum(['all', 'missing']).default('all'),
+        /** When it was added (e.g. to find and remove a file that was uploaded by mistake). */
+        added: z.enum(['all', 'today', 'yesterday', 'week']).default('all'),
         includeInactive: z.coerce.boolean().default(true),
       }),
       req.query,
@@ -88,6 +100,7 @@ export async function adminCatalogRoutes(app: FastifyInstance) {
     if (q.stock === 'low') where.push(sql`${products.stock} between 1 and 5`);
     if (q.stock === 'out') where.push(eq(products.stock, 0));
     if (q.photo === 'missing') where.push(sql`${products.imageUrl} is null`);
+    if (q.added !== 'all') where.push(ADDED[q.added]);
     if (!q.includeInactive) where.push(eq(products.active, true));
     const rows = await db
       .select()
@@ -100,6 +113,7 @@ export async function adminCatalogRoutes(app: FastifyInstance) {
         out: sql<number>`count(*) filter (where ${products.stock} = 0 and ${products.active})::int`,
         low: sql<number>`count(*) filter (where ${products.stock} between 1 and 5 and ${products.active})::int`,
         noPhoto: sql<number>`count(*) filter (where ${products.imageUrl} is null and ${products.active})::int`,
+        addedToday: sql<number>`count(*) filter (where ${ADDED.today})::int`,
       })
       .from(products);
     return { products: rows, summary };
@@ -194,11 +208,35 @@ export async function adminCatalogRoutes(app: FastifyInstance) {
   });
 
   // ---------- Categories ----------
+  // ---------- Delete (admin only) ----------
+  app.delete('/products/:id', { preHandler: guard.admin }, async (req) => {
+    const { id } = parse(idParam, req.params);
+    const r = await deleteProducts([id]);
+    if (!r.deleted) throw notFound(tr('err.product_not_found'));
+    return r;
+  });
+
+  app.post('/products/delete', { preHandler: guard.admin }, async (req) => {
+    const { ids } = parse(z.object({ ids: z.array(z.number().int().positive()).min(1).max(5000) }), req.body);
+    return deleteProducts(ids);
+  });
+
+  app.delete('/categories/:id', { preHandler: guard.admin }, async (req) => {
+    const { id } = parse(idParam, req.params);
+    const { withProducts } = parse(z.object({ withProducts: z.enum(['true', 'false']).default('false') }), req.query);
+    const n = await productCountIn(id);
+    // Never delete products by surprise: the dashboard asks first, then repeats the call with withProducts.
+    if (n > 0 && withProducts !== 'true') throw conflict('category_has_products', tr('err.category_has_products', { n }), { products: n });
+    const r = await deleteCategory(id);
+    if (!r) throw notFound(tr('err.category_not_found'));
+    return r;
+  });
+
   app.get('/categories', async () => {
     const rows = await db
       .select({
         category: categories,
-        productCount: sql<number>`(select count(*)::int from products p where p.category_id = ${categories.id})`,
+        productCount: sql<number>`(select count(*)::int from products p where p.category_id = "categories"."id")`,
       })
       .from(categories)
       .orderBy(asc(categories.sortOrder), asc(categories.name));

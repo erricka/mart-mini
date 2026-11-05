@@ -142,7 +142,8 @@ async function releaseOrderResources(tx: Tx, order: Order, actorUserId: number |
 
   const items = await tx.select().from(orderItems).where(eq(orderItems.orderId, order.id));
   const qtyByProduct = new Map<number, number>();
-  for (const i of items) qtyByProduct.set(i.productId, (qtyByProduct.get(i.productId) ?? 0) + i.quantity);
+  // Deleted products (productId null) have no stock to put back.
+  for (const i of items) if (i.productId != null) qtyByProduct.set(i.productId, (qtyByProduct.get(i.productId) ?? 0) + i.quantity);
   for (const [productId, qty] of [...qtyByProduct.entries()].sort((a, b) => a[0] - b[0])) {
     const [p] = await tx
       .update(products)

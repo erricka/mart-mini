@@ -217,7 +217,9 @@ async function insertBaseSettings(extra: Partial<typeof shopSettings.$inferInser
  * no products, customers or orders. Safe to run repeatedly (does nothing once aisles exist).
  */
 export async function seedStarter(log: (m: string) => void = console.log) {
-  const [{ n }] = await db.select({ n: sql<number>`count(*)::int` }).from(categories);
+  // First boot only. Judged by the shop settings row, not by categories: an admin may delete every
+  // category later, and that must never bring the starter aisles back.
+  const [{ n }] = await db.select({ n: sql<number>`count(*)::int` }).from(shopSettings);
   if (n > 0) return false;
   log('🌱 First boot: creating the mart25 starter setup (settings, levels, rewards, aisles)…');
   await insertBaseSettings();
