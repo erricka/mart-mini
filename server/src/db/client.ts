@@ -22,6 +22,9 @@ export const pool = new pg.Pool({
   connectionString: normalizeDatabaseUrl(config.DATABASE_URL),
   max: 10,
   ssl: config.DATABASE_SSL ? { rejectUnauthorized: false } : undefined,
+  // Without a limit a connection that never answers waits forever, silently (e.g. at start-up).
+  // A sleeping free database wakes in a few seconds; past this it's an error that gets logged and retried.
+  connectionTimeoutMillis: 15_000,
 });
 
 export const db = drizzle(pool, { schema });
