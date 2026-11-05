@@ -26,7 +26,7 @@ const coupon = (over: Partial<PricingCoupon>): PricingCoupon => ({
   id: 1, title: 'C', code: null, discountType: 'percent', value: 10, freeProductId: null,
   minSubtotalCents: 0, maxDiscountCents: null, startsAt: null, endsAt: null, active: true, ...over,
 });
-const base = { settings, multiplierPercent: 100, now: new Date() };
+const base = { settings, multiplierPercent: 100, now: new Date(), addressReady: true };
 
 describe('pricing', () => {
   it('adds a delivery fee below the free-delivery threshold and tells how much is missing', () => {
@@ -40,6 +40,11 @@ describe('pricing', () => {
 
   it('gives free delivery at the threshold and never charges a fee for pickup', () => {
     expect(calculateQuote({ ...base, lines: [{ product: product(1, 3500), quantity: 1 }], fulfillment: 'delivery' }).baseDeliveryFeeCents).toBe(0);
+    // Flat fee without any address yet: pending, not $0 — even above the threshold.
+    const noAddress = calculateQuote({ ...base, addressReady: false, lines: [{ product: product(1, 3500), quantity: 1 }], fulfillment: 'delivery' });
+    expect(noAddress.baseDeliveryFeeCents).toBeNull();
+    expect(noAddress.delivery).toMatchObject({ status: 'needs_address', freeDelivery: false });
+    expect(noAddress.totalPending).toBe(true);
     expect(calculateQuote({ ...base, lines: [{ product: product(1, 1500), quantity: 1 }], fulfillment: 'pickup' }).baseDeliveryFeeCents).toBe(0);
   });
 

@@ -54,7 +54,8 @@ export function Shop() {
             </button>
           )}
         </div>
-        <div className="no-scrollbar -mx-4 mt-3 flex gap-2 overflow-x-auto px-4">
+        <div className="mt-3 text-xs font-bold uppercase tracking-wide text-muted">{t('shop.categories')}</div>
+        <div className="no-scrollbar -mx-4 mt-1.5 flex gap-2 overflow-x-auto px-4">
           <Chip active={!categoryId && !promo} onClick={() => select()}>{t('shop.all')}</Chip>
           <Chip active={promo} onClick={() => select(undefined, true)}>{t('shop.deals')}</Chip>
           {cats.data?.map((c) => (

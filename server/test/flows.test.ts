@@ -165,7 +165,10 @@ describe('Checkout', () => {
   });
 
   it('quotes server-side prices, fees and points', async () => {
-    const r = await call('POST', '/api/checkout/quote', token, { items: [{ productId: ids.apples, quantity: 3 }], fulfillmentType: 'delivery' });
+    const pending = await call('POST', '/api/checkout/quote', token, { items: [{ productId: ids.apples, quantity: 3 }], fulfillmentType: 'delivery' });
+    expect(pending.json.quote.baseDeliveryFeeCents).toBeNull(); // no address yet → fee pending, never $0
+    expect(pending.json.quote.delivery.status).toBe('needs_address');
+    const r = await call('POST', '/api/checkout/quote', token, { items: [{ productId: ids.apples, quantity: 3 }], fulfillmentType: 'delivery', addressReady: true });
     expect(r.json.quote.subtotalCents).toBe(1500);
     expect(r.json.quote.baseDeliveryFeeCents).toBe(299);
     expect(r.json.quote.totalCents).toBe(1799);
@@ -434,15 +437,47 @@ describe('Map delivery: distance fee and "tomorrow" option', () => {
     const shop = await call('GET', '/api/shop');
     expect(shop.json).toMatchObject({ deliveryPricing: 'distance', store: STORE, nextDayEnabled: true, nextDayFeeCents: 200 });
     const q = await call('POST', '/api/checkout/quote', token, { items: [{ productId: ids.apples, quantity: 2 }], fulfillmentType: 'delivery' });
-    expect(q.json.quote.delivery.needsLocation).toBe(true);
+    expect(q.json.quote.delivery).toMatchObject({ status: 'needs_address', freeDelivery: false });
+    expect(q.json.quote.baseDeliveryFeeCents).toBeNull();
     const priced = await call('POST', '/api/checkout/quote', token, { items: [{ productId: ids.apples, quantity: 2 }], fulfillmentType: 'delivery', location: north(6) });
     expect(priced.json.quote.delivery).toMatchObject({ distanceKm: 7.8, sameDayFeeCents: 235, nextDayFeeCents: 200 });
     expect(priced.json.quote.nextDayDate).toMatch(/^\d{4}-\d{2}-\d{2}$/);
   });
 
-  it('refuses delivery without a pin', async () => {
+  it('refuses delivery without a pin (fee pending)', async () => {
     const r = await order(token, { fulfillmentType: 'delivery', address });
     expect(r.status).toBe(409);
+    expect(r.json.error.code).toBe('delivery_needs_address');
+  });
+
+  it('validates the fee the customer reviewed before creating the order', async () => {
+    // Customer saw a stale fee (e.g. before moving the pin) → refused, nothing created.
+    const stale = await order(token, { fulfillmentType: 'delivery', address: { ...address, save: false }, location: north(6), expectedDeliveryFeeCents: 75 });
+    expect(stale.status).toBe(409);
+    expect(stale.json.error.code).toBe('price_changed');
+    expect(stale.json.error.details).toMatchObject({ deliveryFeeCents: 235 });
+    // The free-delivery threshold can't be claimed by the client: $10 basket < $35 rule.
+    const fakeFree = await order(token, { fulfillmentType: 'delivery', address: { ...address, save: false }, location: north(6), expectedDeliveryFeeCents: 0 });
+    expect(fakeFree.json.error.code).toBe('price_changed');
+    const ok = await order(token, {
+      fulfillmentType: 'delivery',
+      address: { ...address, save: false },
+      location: north(6),
+      expectedDeliveryFeeCents: 235,
+      expectedTotalCents: 1000 + 235,
+    });
+    expect(ok.status).toBe(201);
+    expect(ok.json.order.deliveryFeeCents).toBe(235);
+  });
+
+  it('free delivery at exactly the threshold, standard fee again just below it', async () => {
+    // Test shop rule: free delivery from $35.00 of items (apples are $5).
+    const at = await order(token, { fulfillmentType: 'delivery', address: { ...address, save: false }, location: north(6), items: [{ productId: ids.apples, quantity: 7 }], expectedDeliveryFeeCents: 0 });
+    expect(at.status).toBe(201);
+    expect(at.json.order.deliveryFeeCents).toBe(0);
+    const below = await call('POST', '/api/checkout/quote', token, { items: [{ productId: ids.apples, quantity: 6 }], fulfillmentType: 'delivery', location: north(6) });
+    expect(below.json.quote.baseDeliveryFeeCents).toBe(235);
+    expect(below.json.quote.delivery.freeRule).toMatchObject({ remainingCents: 500, met: false });
   });
 
   it('places a next-day order for $2, saves the pin, and gives staff a map link', async () => {
@@ -468,8 +503,12 @@ describe('Map delivery: distance fee and "tomorrow" option', () => {
   });
 
   it('refuses pins beyond the delivery limit', async () => {
-    const r = await order(token, { fulfillmentType: 'delivery', address: { ...address, save: false }, location: north(18) });
+    const r = await order(token, { fulfillmentType: 'delivery', address: { ...address, save: false }, location: north(18), items: [{ productId: ids.apples, quantity: 10 }] });
     expect(r.status).toBe(409);
+    expect(r.json.error.code).toBe('delivery_unsupported');
+    const q = await call('POST', '/api/checkout/quote', token, { items: [{ productId: ids.apples, quantity: 10 }], fulfillmentType: 'delivery', location: north(18) });
+    expect(q.json.quote.baseDeliveryFeeCents).toBeNull(); // never $0, even above the free-delivery threshold
+    expect(q.json.quote.delivery.freeDelivery).toBe(false);
   });
 
   it('lets admins turn a pasted link or coordinates into the store pin', async () => {

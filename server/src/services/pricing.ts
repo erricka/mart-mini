@@ -55,23 +55,44 @@ export interface PricingSettings {
 
 export type DeliverySpeed = 'same_day' | 'next_day';
 
+/**
+ * Where the delivery fee stands. Only `ok` has a fee; every other state means "no fee yet" — never $0
+ * and never "free delivery".
+ *  - needs_address: the customer hasn't given the location the calculator needs (first visit)
+ *  - unsupported:   the location is outside the delivery area
+ *  - unavailable:   delivery (or the chosen speed) is switched off
+ */
+export type DeliveryStatus = 'needs_address' | 'ok' | 'unsupported' | 'unavailable';
+
 export interface DeliveryOptions {
   mode: 'flat' | 'distance';
-  /** Estimated road km from the store (distance mode with a pin). */
+  status: DeliveryStatus;
+  /** Estimated road km from the store (when a pin is known). */
   distanceKm: number | null;
-  /** Distance mode but the customer hasn't dropped a pin yet. */
-  needsLocation: boolean;
-  tooFar: boolean;
   maxKm: number | null;
-  /** Fees before the free-delivery threshold / coupons. Null when unknown or unavailable. */
+  /** Standard fees for each speed (before free delivery / coupons). Null unless the location is ok. */
   sameDayFeeCents: number | null;
   nextDayFeeCents: number | null;
 }
 
+/** The shop's free-delivery rule, when one is configured (Settings → "Free delivery from"). */
+export interface FreeDeliveryRule {
+  type: 'min_subtotal';
+  minCents: number;
+  /** How much more the customer needs to spend (0 when met). */
+  remainingCents: number;
+  met: boolean;
+}
+
 export interface DeliveryInfo extends DeliveryOptions {
   speed: DeliverySpeed;
-  /** The free-delivery threshold was reached, so the fee is 0 whichever speed is chosen. */
-  freeByThreshold: boolean;
+  /** Standard fee for the chosen speed, before free delivery / coupons. Null unless status is ok. */
+  standardFeeCents: number | null;
+  /** True only when the location is validated (status ok) AND the basket meets the rule. */
+  freeDelivery: boolean;
+  freeRule: FreeDeliveryRule | null;
+  /** What the customer should do / why there's no fee (in their language). Null when ok. */
+  message: string | null;
 }
 
 const roundUp = (cents: number, currency: string) => {
@@ -83,31 +104,33 @@ const roundUp = (cents: number, currency: string) => {
  * Distance-based delivery pricing: base fare + per-km rate on the estimated road distance, with a
  * minimum fee, rounded up to a friendly amount. "Tomorrow" is a flat fee, never more than today.
  */
-export function deliveryOptions(settings: PricingSettings, destination: LatLng | null): DeliveryOptions {
+export function deliveryOptions(settings: PricingSettings, destination: LatLng | null, addressReady = false): DeliveryOptions {
   const store = settings.storeLat != null && settings.storeLng != null ? { lat: settings.storeLat, lng: settings.storeLng } : null;
-  const nextDay = (sameDay: number | null) =>
-    settings.nextDayEnabled ? (sameDay == null ? settings.nextDayFeeCents : Math.min(settings.nextDayFeeCents, sameDay)) : null;
+  const nextDay = (sameDay: number) =>
+    settings.nextDayEnabled ? Math.min(settings.nextDayFeeCents, sameDay) : null;
+  const none = { sameDayFeeCents: null, nextDayFeeCents: null };
   if (settings.deliveryPricing !== 'distance' || !store) {
-    return {
-      mode: 'flat',
-      distanceKm: store && destination ? roadKm(store, destination) : null,
-      needsLocation: false,
-      tooFar: false,
-      maxKm: null,
-      sameDayFeeCents: settings.deliveryFeeCents,
-      nextDayFeeCents: nextDay(settings.deliveryFeeCents),
-    };
+    // Flat fee: the calculator needs an address (typed or saved) — or a pin — before showing a fee.
+    const base = { mode: 'flat' as const, maxKm: null, distanceKm: store && destination ? roadKm(store, destination) : null };
+    if (!settings.deliveryEnabled) return { ...base, status: 'unavailable', ...none };
+    if (!destination && !addressReady) return { ...base, status: 'needs_address', ...none };
+    return { ...base, status: 'ok', sameDayFeeCents: settings.deliveryFeeCents, nextDayFeeCents: nextDay(settings.deliveryFeeCents) };
   }
   const base = { mode: 'distance' as const, maxKm: settings.deliveryMaxKm };
-  if (!destination) {
-    return { ...base, distanceKm: null, needsLocation: true, tooFar: false, sameDayFeeCents: null, nextDayFeeCents: null };
-  }
+  if (!settings.deliveryEnabled) return { ...base, status: 'unavailable', distanceKm: null, ...none };
+  // Distance pricing: the calculator needs the map pin.
+  if (!destination) return { ...base, status: 'needs_address', distanceKm: null, ...none };
   const km = roadKm(store, destination);
-  if (settings.deliveryMaxKm != null && km > settings.deliveryMaxKm) {
-    return { ...base, distanceKm: km, needsLocation: false, tooFar: true, sameDayFeeCents: null, nextDayFeeCents: null };
-  }
+  if (settings.deliveryMaxKm != null && km > settings.deliveryMaxKm) return { ...base, status: 'unsupported', distanceKm: km, ...none };
   const sameDay = roundUp(Math.max(settings.deliveryMinFeeCents, settings.deliveryBaseCents + settings.deliveryPerKmCents * km), settings.currency);
-  return { ...base, distanceKm: km, needsLocation: false, tooFar: false, sameDayFeeCents: sameDay, nextDayFeeCents: nextDay(sameDay) };
+  return { ...base, status: 'ok', distanceKm: km, sameDayFeeCents: sameDay, nextDayFeeCents: nextDay(sameDay) };
+}
+
+/** The configured free-delivery rule for this basket, or null when Mart25 hasn't set one. */
+export function freeDeliveryRule(settings: PricingSettings, subtotalCents: number): FreeDeliveryRule | null {
+  if (settings.freeDeliveryMinCents == null) return null;
+  const remainingCents = Math.max(0, settings.freeDeliveryMinCents - subtotalCents);
+  return { type: 'min_subtotal', minCents: settings.freeDeliveryMinCents, remainingCents, met: remainingCents === 0 };
 }
 
 export type LineIssue = 'unavailable' | 'out_of_stock' | 'insufficient_stock';
@@ -130,11 +153,18 @@ export interface Quote {
   lines: QuoteLine[];
   subtotalCents: number;
   itemDiscountCents: number;
-  baseDeliveryFeeCents: number;
+  /**
+   * Delivery fee to charge before coupons: 0 for pickup or free delivery, the standard fee otherwise,
+   * and NULL while there's no validated delivery location (see delivery.status) — never a fake $0.
+   */
+  baseDeliveryFeeCents: number | null;
   deliveryDiscountCents: number;
   /** itemDiscount + deliveryDiscount */
   discountCents: number;
+  /** What the customer pays. While the delivery fee is pending this excludes delivery (see totalPending). */
   totalCents: number;
+  /** True for delivery orders whose fee isn't known yet — the total isn't final. */
+  totalPending: boolean;
   discount: { couponId: number; label: string; type: PricingCoupon['discountType'] } | null;
   couponError: string | null;
   pointsEstimate: number;
@@ -159,8 +189,10 @@ export interface QuoteInput {
   now: Date;
   /** Customer's map pin (delivery). */
   destination?: LatLng | null;
+  /** A delivery address (saved, or typed with street + city) is present — flat-fee mode needs it. */
+  addressReady?: boolean;
   deliverySpeed?: DeliverySpeed;
-  /** When placing the order a pin is mandatory in distance mode; the cart preview doesn't need one. */
+  /** When placing the order a validated location is mandatory; the cart preview doesn't need one. */
   requireLocation?: boolean;
 }
 
@@ -235,29 +267,37 @@ export function calculateQuote(input: QuoteInput): Quote {
     issues.push(tr('price.min_order', { amount: formatMoney(settings.minOrderCents, settings.currency) }));
   }
 
-  // Delivery fee (before coupons). Free-delivery threshold uses the pre-discount subtotal.
-  let baseDeliveryFeeCents = 0;
+  // Delivery fee (before coupons). The free-delivery rule uses the pre-discount subtotal, and only
+  // applies once the delivery location is validated — a pending or unsupported location never shows
+  // $0 or "free delivery".
+  let baseDeliveryFeeCents: number | null = 0;
   let freeDeliveryRemainingCents: number | null = null;
   let delivery: DeliveryInfo | null = null;
   if (fulfillment === 'delivery') {
-    const opts = deliveryOptions(settings, input.destination ?? null);
+    const opts = deliveryOptions(settings, input.destination ?? null, input.addressReady ?? false);
     const speed: DeliverySpeed = input.deliverySpeed ?? 'same_day';
-    const freeByThreshold = settings.freeDeliveryMinCents != null && subtotalCents >= settings.freeDeliveryMinCents;
-    delivery = { ...opts, speed, freeByThreshold };
-    if (opts.needsLocation && input.requireLocation) issues.push(tr('price.need_location'));
-    if (opts.tooFar) {
-      issues.push(tr('price.too_far', { km: opts.distanceKm ?? 0, max: opts.maxKm ?? 0 }));
-    } else if (speed === 'next_day' && opts.nextDayFeeCents == null && !opts.needsLocation) {
-      issues.push(tr('price.next_day_off'));
+    let status = opts.status;
+    let standardFeeCents: number | null = null;
+    if (status === 'ok') {
+      standardFeeCents = speed === 'next_day' ? opts.nextDayFeeCents : opts.sameDayFeeCents;
+      if (standardFeeCents == null) status = 'unavailable'; // next-day switched off
     }
-    if (freeByThreshold) {
-      baseDeliveryFeeCents = 0;
-      freeDeliveryRemainingCents = 0;
-    } else {
-      baseDeliveryFeeCents = (speed === 'next_day' ? opts.nextDayFeeCents : opts.sameDayFeeCents) ?? 0;
-      freeDeliveryRemainingCents =
-        settings.freeDeliveryMinCents != null ? settings.freeDeliveryMinCents - subtotalCents : null;
-    }
+    const freeRule = freeDeliveryRule(settings, subtotalCents);
+    const freeDelivery = status === 'ok' && !!freeRule?.met;
+    const message =
+      status === 'needs_address'
+        ? tr('price.need_address')
+        : status === 'unsupported'
+          ? tr('price.too_far', { km: opts.distanceKm ?? 0, max: opts.maxKm ?? 0 })
+          : status === 'unavailable'
+            ? tr(settings.deliveryEnabled ? 'price.next_day_off' : 'price.no_delivery')
+            : null;
+    delivery = { ...opts, status, speed, standardFeeCents, freeDelivery, freeRule, message };
+    // "Delivery off" is already listed above; a missing address only blocks placing the order.
+    if (status === 'unsupported' || (status === 'unavailable' && settings.deliveryEnabled)) issues.push(message!);
+    if (status === 'needs_address' && input.requireLocation) issues.push(message!);
+    baseDeliveryFeeCents = status === 'ok' ? (freeDelivery ? 0 : standardFeeCents!) : null;
+    freeDeliveryRemainingCents = freeRule ? freeRule.remainingCents : null;
   }
 
   // Coupon / reward.
@@ -281,8 +321,8 @@ export function calculateQuote(input: QuoteInput): Quote {
           break;
         case 'free_delivery':
           if (fulfillment !== 'delivery') couponError = tr('price.fd_pickup');
-          else if (delivery?.needsLocation) {
-            /* Applied once the customer drops a pin and the fee is known. */
+          else if (baseDeliveryFeeCents == null) {
+            /* Applied once the delivery location is validated and the fee is known. */
           } else if (baseDeliveryFeeCents === 0) couponError = tr('price.fd_already');
           else deliveryDiscountCents = baseDeliveryFeeCents;
           break;
@@ -314,7 +354,8 @@ export function calculateQuote(input: QuoteInput): Quote {
   }
 
   const discountCents = itemDiscountCents + deliveryDiscountCents;
-  const totalCents = Math.max(0, subtotalCents - itemDiscountCents + baseDeliveryFeeCents - deliveryDiscountCents);
+  const totalCents = Math.max(0, subtotalCents - itemDiscountCents + (baseDeliveryFeeCents ?? 0) - deliveryDiscountCents);
+  const totalPending = baseDeliveryFeeCents == null;
 
   // Points: merchandise value after item discounts, delivery excluded.
   const merchandiseCents = subtotalCents - itemDiscountCents;
@@ -331,6 +372,7 @@ export function calculateQuote(input: QuoteInput): Quote {
     deliveryDiscountCents,
     discountCents,
     totalCents,
+    totalPending,
     discount,
     couponError,
     pointsEstimate,

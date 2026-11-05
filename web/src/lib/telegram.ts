@@ -178,7 +178,8 @@ function browserLocation(): Promise<{ lat: number; lng: number } | null> {
     navigator.geolocation.getCurrentPosition(
       (p) => resolve({ lat: p.coords.latitude, lng: p.coords.longitude }),
       () => resolve(null),
-      { enableHighAccuracy: true, timeout: 12_000, maximumAge: 60_000 },
+      // "Use my location" is an explicit tap: always take a fresh position.
+      { enableHighAccuracy: true, timeout: 12_000, maximumAge: 0 },
     ),
   );
 }

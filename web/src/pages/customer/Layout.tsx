@@ -6,12 +6,14 @@ import { useHome } from '../../lib/queries';
 import { useTelegramBackButton } from '../../lib/telegram';
 import { cx } from '../../components/ui';
 
+// Shopping first: Shop and the Basket (with its item count) are always one tap away.
+// Profile opens from the avatar on Home (and links to Rewards history too).
 const TABS: { to: string; label: TKey; icon: string; end?: boolean }[] = [
   { to: '/', label: 'nav.home', icon: '🏠', end: true },
-  { to: '/shop', label: 'nav.shop', icon: '🛒' },
+  { to: '/shop', label: 'nav.shop', icon: '🛍️' },
+  { to: '/cart', label: 'nav.cart', icon: '🧺' },
   { to: '/rewards', label: 'nav.rewards', icon: '🎁' },
   { to: '/orders', label: 'nav.orders', icon: '📦' },
-  { to: '/profile', label: 'nav.profile', icon: '🙂' },
 ];
 const TAB_PATHS = new Set(TABS.map((t) => t.to));
 const HIDE_CART_BAR = ['/cart', '/checkout'];
@@ -76,6 +78,15 @@ export function CustomerLayout() {
                   <>
                     <span className={cx('text-[22px] leading-none transition', isActive ? 'scale-110' : 'grayscale-[.6] opacity-80')}>{tab.icon}</span>
                     <span className="max-w-full truncate px-0.5">{t(tab.label)}</span>
+                    {tab.to === '/cart' && count > 0 && (
+                      <span
+                        key={bump}
+                        className="animate-pop absolute left-1/2 top-1 ml-2 grid h-5 min-w-5 place-items-center rounded-full bg-brand px-1 text-[11px] font-bold leading-none text-brand-ink ring-2 ring-surface"
+                        aria-label={`${count}`}
+                      >
+                        {count > 99 ? '99+' : count}
+                      </span>
+                    )}
                     {tab.to === '/orders' && (home.data?.activeOrders ?? 0) > 0 && (
                       <span className="absolute right-[22%] top-1.5 h-2.5 w-2.5 rounded-full bg-orange-500 ring-2 ring-surface" />
                     )}

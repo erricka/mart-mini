@@ -41,6 +41,8 @@ export const cartSchema = z.object({
   location: latLngSchema.optional().nullable(),
   /** "same_day" (priced by distance) or "next_day" (I can wait until tomorrow). */
   deliverySpeed: z.enum(['same_day', 'next_day']).optional().default('same_day'),
+  /** The customer has entered/chosen a delivery address (flat-fee mode needs one before quoting a fee). */
+  addressReady: z.boolean().optional(),
   couponCode: z.string().trim().max(40).optional().nullable(),
   customerRewardId: z.number().int().positive().optional().nullable(),
 });
@@ -65,6 +67,13 @@ export const placeOrderSchema = cartSchema.extend({
   addressId: z.number().int().positive().optional().nullable(),
   address: addressInputSchema.extend({ save: z.boolean().optional().default(true) }).optional().nullable(),
   note: z.string().trim().max(500).optional().nullable(),
+  /**
+   * What the customer saw before tapping "Place order". The server recalculates everything; if its
+   * delivery fee or total differs (e.g. the cart or location changed), the order is refused with
+   * price_changed instead of charging a different amount.
+   */
+  expectedDeliveryFeeCents: z.number().int().min(0).nullable().optional(),
+  expectedTotalCents: z.number().int().min(0).optional(),
 });
 
 export type CartInput = z.infer<typeof cartSchema>;
@@ -123,7 +132,7 @@ function buildQuote(
   settings: Awaited<ReturnType<typeof getSettings>>,
   discount: ResolvedDiscount,
   multiplierPercent: number,
-  delivery: { destination: LatLng | null; requireLocation: boolean },
+  delivery: { destination: LatLng | null; addressReady: boolean; requireLocation: boolean },
 ): Quote {
   const lines = input.items
     .filter((i) => productsById.has(i.productId))
@@ -139,6 +148,7 @@ function buildQuote(
     multiplierPercent,
     now: new Date(),
     destination: delivery.destination,
+    addressReady: delivery.addressReady,
     deliverySpeed: input.deliverySpeed,
     requireLocation: delivery.requireLocation,
   });
@@ -155,7 +165,11 @@ export async function quoteCart(user: User, input: CartInput) {
   const byId = new Map(rows.map((p) => [p.id, { ...p, name: pick(p.name, p.nameEn) }]));
   if (discount.coupon) discount.coupon = { ...discount.coupon, title: pick(discount.coupon.title, discount.coupon.titleEn) };
   const level = levelFor(allLevels, user.pointsBalance).current;
-  const quote = buildQuote(input, byId, settings, discount, level.multiplierPercent, { destination: input.location ?? null, requireLocation: false });
+  const quote = buildQuote(input, byId, settings, discount, level.multiplierPercent, {
+    destination: input.location ?? null,
+    addressReady: input.addressReady ?? false,
+    requireLocation: false,
+  });
   const missing = input.items.filter((i) => !byId.has(i.productId)).map((i) => i.productId);
   if (missing.length) quote.issues.push(tr('err.items_gone'));
   return {
@@ -256,11 +270,30 @@ export async function placeOrder(user: User, input: PlaceOrderInput): Promise<{ 
       if (missing.length) throw conflict('product_unavailable', tr('err.items_gone'), { missing });
 
       const level = levelFor(allLevels, u.pointsBalance).current;
-      const quote = buildQuote(input, byId, settings, discount, level.multiplierPercent, { destination, requireLocation: true });
+      const quote = buildQuote(input, byId, settings, discount, level.multiplierPercent, {
+        destination,
+        addressReady: address != null,
+        requireLocation: true,
+      });
+      // Delivery must have a validated location and a calculated fee (never a pending/$0 fee).
+      if (quote.delivery && quote.delivery.status !== 'ok') {
+        throw conflict(`delivery_${quote.delivery.status}`, quote.delivery.message ?? tr('price.no_delivery'), { delivery: quote.delivery });
+      }
       if (!quote.canPlace) {
         throw conflict('cannot_place', quote.issues[0], { issues: quote.issues, lines: quote.lines.filter((l) => l.issue) });
       }
       if (discount.coupon && quote.couponError) throw conflict('coupon_invalid', quote.couponError);
+      // Server-side check of what the customer reviewed: never charge a different fee or total.
+      const effectiveFeeCents = quote.delivery ? quote.baseDeliveryFeeCents! - quote.deliveryDiscountCents : 0;
+      const feeChanged =
+        input.fulfillmentType === 'delivery' && input.expectedDeliveryFeeCents !== undefined && input.expectedDeliveryFeeCents !== effectiveFeeCents;
+      const totalChanged = input.expectedTotalCents !== undefined && input.expectedTotalCents !== quote.totalCents;
+      if (feeChanged || totalChanged) {
+        throw conflict('price_changed', tr('err.price_changed', { total: formatMoney(quote.totalCents, settings.currency) }), {
+          deliveryFeeCents: effectiveFeeCents,
+          totalCents: quote.totalCents,
+        });
+      }
 
       // 5) Create the order and its lines.
       const now = new Date();
@@ -273,7 +306,7 @@ export async function placeOrder(user: User, input: PlaceOrderInput): Promise<{ 
           paymentMethod: input.paymentMethod,
           subtotalCents: quote.subtotalCents,
           discountCents: quote.discountCents,
-          deliveryFeeCents: quote.baseDeliveryFeeCents,
+          deliveryFeeCents: quote.baseDeliveryFeeCents ?? 0,
           totalCents: quote.totalCents,
           couponId: quote.discount ? discount.coupon!.id : null,
           customerRewardId: quote.discount ? (discount.customerReward?.id ?? null) : null,

@@ -14,19 +14,24 @@ import type { DeliverySpeed, LatLng, Quote } from '../../lib/types';
 export function useCartQuote(
   fulfillmentType: 'delivery' | 'pickup',
   discount: { couponCode?: string | null; customerRewardId?: number | null } = {},
-  delivery: { location?: LatLng | null; deliverySpeed?: DeliverySpeed } = {},
+  delivery: { location?: LatLng | null; deliverySpeed?: DeliverySpeed; addressReady?: boolean } = {},
 ) {
   const lines = useCart((s) => s.lines);
   const items = lines.map((l) => ({ productId: l.productId, quantity: l.quantity }));
   const location = fulfillmentType === 'delivery' ? (delivery.location ?? null) : null;
   const deliverySpeed = delivery.deliverySpeed ?? 'same_day';
+  const addressReady = fulfillmentType === 'delivery' && !!delivery.addressReady;
   return useQuery({
-    queryKey: ['quote', items, fulfillmentType, discount.couponCode ?? null, discount.customerRewardId ?? null, location?.lat, location?.lng, deliverySpeed],
+    queryKey: ['quote', items, fulfillmentType, discount.couponCode ?? null, discount.customerRewardId ?? null, location?.lat, location?.lng, deliverySpeed, addressReady],
     enabled: items.length > 0,
+    // The previous quote stays visible while recalculating, but screens must treat it as stale
+    // (isPlaceholderData / isFetching) — never place an order with it.
     placeholderData: (prev) => prev,
+    // Prices, stock and fees are always re-checked with the server (no reuse of a recent quote).
+    staleTime: 0,
     queryFn: () =>
       api<{ quote: Quote; discounts: { wallet: any[]; publicCoupons: any[] } }>('/checkout/quote', {
-        body: { items, fulfillmentType, ...discount, location, deliverySpeed },
+        body: { items, fulfillmentType, ...discount, location, deliverySpeed, addressReady },
       }),
   });
 }
@@ -111,13 +116,15 @@ export function Cart() {
         })}
       </div>
 
+      {/* Progress against the shop's actual free-delivery rule. Free delivery itself is only applied at
+          checkout, once the address is validated — so no "free delivery" fee label here. */}
       {freeMin != null && shop.data?.deliveryEnabled && (
         <Card className="mt-4">
           {subtotal >= freeMin ? (
-            <p className="font-semibold">{t('cart.free_unlocked')}</p>
+            <p className="text-sm font-semibold">{t('cart.free_reached', { min: money(freeMin) })}</p>
           ) : (
             <>
-              <p className="text-sm font-semibold">{t('cart.add_more_free', { amount: money(freeMin - subtotal) })}</p>
+              <p className="text-sm font-semibold">{t('cart.add_more_rule', { amount: money(freeMin - subtotal), min: money(freeMin) })}</p>
               <ProgressBar percent={(subtotal / freeMin) * 100} tone="brand" className="mt-2" />
             </>
           )}
@@ -125,8 +132,10 @@ export function Cart() {
       )}
 
       <Card className="mt-4 space-y-1.5">
-        <div className="flex justify-between"><span className="text-muted">{t('cart.subtotal')}</span><span className="font-semibold">{money(subtotal)}</span></div>
-        <div className="flex justify-between text-sm"><span className="text-muted">{t('cart.delivery_discounts')}</span><span className="text-muted">{t('cart.at_checkout')}</span></div>
+        <div className="flex justify-between"><span className="text-muted">{t('co.subtotal')}</span><span className="font-semibold">{money(subtotal)}</span></div>
+        {shop.data?.deliveryEnabled && (
+          <div className="flex justify-between gap-3 text-sm"><span className="text-muted">{t('co.delivery_fee')}</span><span className="text-right text-muted">{t('cart.fee_at_checkout')}</span></div>
+        )}
         {quote.isFetching && !q ? <Skeleton className="h-4 w-32" /> : q && q.pointsEstimate > 0 && (
           <div className="pt-1 text-sm font-semibold text-amber-600">{t('cart.earn_about', { n: q.pointsEstimate })}</div>
         )}
@@ -142,7 +151,7 @@ export function Cart() {
           onClick={() => navigate('/checkout')}
           className="shadow-xl"
         >
-          {t('cart.checkout', { amount: money(subtotal) })}
+          {t('cart.continue')}
         </Button>
       </div>
     </div>

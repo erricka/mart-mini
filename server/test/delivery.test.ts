@@ -52,33 +52,14 @@ describe('distance-based delivery fee', () => {
   it('uses the chosen speed in the quote and keeps the free-delivery threshold', () => {
     const today = quote({ destination: north(6) });
     expect(today.baseDeliveryFeeCents).toBe(235);
-    expect(today.delivery).toMatchObject({ mode: 'distance', speed: 'same_day', distanceKm: 7.8 });
+    expect(today.delivery).toMatchObject({ mode: 'distance', status: 'ok', speed: 'same_day', distanceKm: 7.8, standardFeeCents: 235, freeDelivery: false });
     const tomorrow = quote({ destination: north(6), deliverySpeed: 'next_day' });
     expect(tomorrow.baseDeliveryFeeCents).toBe(200);
     expect(tomorrow.totalCents).toBe(1200);
     const big = quote({ destination: north(6), deliverySpeed: 'next_day', lines: [{ product: product(4000), quantity: 1 }] });
     expect(big.baseDeliveryFeeCents).toBe(0);
-    expect(big.delivery?.freeByThreshold).toBe(true);
+    expect(big.delivery).toMatchObject({ freeDelivery: true, standardFeeCents: 200 });
   });
-
-  it('needs a pin only when placing the order, and refuses addresses beyond the limit', () => {
-    const preview = quote();
-    expect(preview.delivery?.needsLocation).toBe(true);
-    expect(preview.canPlace).toBe(true);
-    expect(quote({ requireLocation: true }).canPlace).toBe(false);
-    const tooFar = quote({ destination: north(18) }); // 23.4 km road > 20 km
-    expect(tooFar.delivery?.tooFar).toBe(true);
-    expect(tooFar.canPlace).toBe(false);
-    expect(tooFar.issues[0]).toMatch(/23\.4/);
-  });
-
-  it('falls back to the flat fee until the store pin is known', () => {
-    const q = quote({ settings: { ...settings, storeLat: null, storeLng: null }, requireLocation: true });
-    expect(q.delivery?.mode).toBe('flat');
-    expect(q.baseDeliveryFeeCents).toBe(150);
-    expect(q.canPlace).toBe(true);
-  });
-
   it('rounds riel fees up to 100៛', () => {
     const khr = { ...settings, currency: 'KHR', deliveryBaseCents: 150_000, deliveryPerKmCents: 100_000, deliveryMinFeeCents: 250_000, nextDayFeeCents: 800_000 };
     // 1.3 km → 1,500 + 1,300 = 2,800៛
@@ -99,6 +80,83 @@ describe('distance-based delivery fee', () => {
     // 20:00 UTC on 3 Nov is already 03:00 on 4 Nov in Phnom Penh → tomorrow is 5 Nov.
     expect(cambodiaDate(new Date('2026-11-03T20:00:00Z'), 1)).toBe('2026-11-05');
     expect(cambodiaDate(new Date('2026-11-03T10:00:00Z'), 1)).toBe('2026-11-04');
+  });
+});
+
+describe('Delivery fee scenarios (free delivery only after the location is validated)', () => {
+  const big = (cents: number) => [{ product: product(cents), quantity: 1 }];
+
+  it('first visit, no address: fee pending — never $0 and never "free", even above the threshold', () => {
+    for (const lines of [big(1000), big(5000)]) {
+      const q = quote({ lines });
+      expect(q.delivery).toMatchObject({ status: 'needs_address', standardFeeCents: null, freeDelivery: false });
+      expect(q.delivery?.message).toMatch(/Enter your delivery address/);
+      expect(q.baseDeliveryFeeCents).toBeNull();
+      expect(q.totalPending).toBe(true);
+      expect(q.canPlace).toBe(true); // browsing is fine…
+      expect(quote({ lines, requireLocation: true }).canPlace).toBe(false); // …placing the order is not
+    }
+  });
+
+  it('valid address, below the threshold: standard fee, and how much more to spend', () => {
+    const q = quote({ destination: north(6), lines: big(3000) });
+    expect(q.baseDeliveryFeeCents).toBe(235);
+    expect(q.totalCents).toBe(3235);
+    expect(q.delivery?.freeRule).toEqual({ type: 'min_subtotal', minCents: 3500, remainingCents: 500, met: false });
+  });
+
+  it('exactly at the threshold: free delivery', () => {
+    const q = quote({ destination: north(6), lines: big(3500) });
+    expect(q.delivery).toMatchObject({ status: 'ok', freeDelivery: true, standardFeeCents: 235 });
+    expect(q.baseDeliveryFeeCents).toBe(0);
+    expect(q.totalCents).toBe(3500);
+  });
+
+  it('falling below the threshold after removing an item restores the standard fee', () => {
+    const at = quote({ destination: north(6), lines: [{ product: product(1750), quantity: 2 }] });
+    expect(at.baseDeliveryFeeCents).toBe(0);
+    const after = quote({ destination: north(6), lines: [{ product: product(1750), quantity: 1 }] });
+    expect(after.baseDeliveryFeeCents).toBe(235);
+    expect(after.totalCents).toBe(1750 + 235);
+    expect(after.delivery?.freeDelivery).toBe(false);
+  });
+
+  it('changing the address recalculates the fee', () => {
+    expect(quote({ destination: north(1) }).baseDeliveryFeeCents).toBe(75);
+    expect(quote({ destination: north(6) }).baseDeliveryFeeCents).toBe(235);
+  });
+
+  it('unsupported location: no fee, no free delivery, cannot order — even above the threshold', () => {
+    const q = quote({ destination: north(18), lines: big(9000) }); // 23.4 km road > 20 km
+    expect(q.delivery).toMatchObject({ status: 'unsupported', standardFeeCents: null, freeDelivery: false });
+    expect(q.baseDeliveryFeeCents).toBeNull();
+    expect(q.canPlace).toBe(false);
+    expect(q.issues[0]).toMatch(/23\.4/);
+  });
+
+  it('no free-delivery rule configured: free delivery is never applied', () => {
+    const q = quote({ settings: { ...settings, freeDeliveryMinCents: null }, destination: north(6), lines: big(99_900) });
+    expect(q.delivery).toMatchObject({ freeRule: null, freeDelivery: false });
+    expect(q.baseDeliveryFeeCents).toBe(235);
+  });
+
+  it('delivery switched off or next-day off: unavailable, never $0', () => {
+    const off = quote({ settings: { ...settings, deliveryEnabled: false }, destination: north(6) });
+    expect(off.delivery?.status).toBe('unavailable');
+    expect(off.baseDeliveryFeeCents).toBeNull();
+    expect(off.canPlace).toBe(false);
+    const noNextDay = quote({ settings: { ...settings, nextDayEnabled: false }, destination: north(6), deliverySpeed: 'next_day' });
+    expect(noNextDay.delivery?.status).toBe('unavailable');
+    expect(noNextDay.baseDeliveryFeeCents).toBeNull();
+  });
+
+  it('a free-delivery reward waits for a validated location instead of showing $0', () => {
+    const fd = { id: 9, title: 'Free delivery', code: null, discountType: 'free_delivery' as const, value: 0, freeProductId: null, minSubtotalCents: 0, maxDiscountCents: null, startsAt: null, endsAt: null, active: true };
+    const pending = quote({ coupon: fd });
+    expect(pending.deliveryDiscountCents).toBe(0);
+    expect(pending.baseDeliveryFeeCents).toBeNull();
+    const ok = quote({ coupon: fd, destination: north(6) });
+    expect(ok.deliveryDiscountCents).toBe(235);
   });
 });
 

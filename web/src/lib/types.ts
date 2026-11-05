@@ -27,16 +27,28 @@ export interface LatLng {
 
 export type DeliverySpeed = 'same_day' | 'next_day';
 
+/** Only `ok` has a fee. Every other state means "no fee yet" — never $0 and never free delivery. */
+export type DeliveryStatus = 'needs_address' | 'ok' | 'unsupported' | 'unavailable';
+
+export interface FreeDeliveryRule {
+  type: 'min_subtotal';
+  minCents: number;
+  remainingCents: number;
+  met: boolean;
+}
+
 export interface DeliveryInfo {
   mode: 'flat' | 'distance';
+  status: DeliveryStatus;
   speed: DeliverySpeed;
   distanceKm: number | null;
-  needsLocation: boolean;
-  tooFar: boolean;
   maxKm: number | null;
   sameDayFeeCents: number | null;
   nextDayFeeCents: number | null;
-  freeByThreshold: boolean;
+  standardFeeCents: number | null;
+  freeDelivery: boolean;
+  freeRule: FreeDeliveryRule | null;
+  message: string | null;
 }
 
 export interface Shop {
@@ -184,10 +196,12 @@ export interface Quote {
   lines: QuoteLine[];
   subtotalCents: number;
   itemDiscountCents: number;
-  baseDeliveryFeeCents: number;
+  /** Null while the delivery fee is pending (no validated location) — never a fake $0. */
+  baseDeliveryFeeCents: number | null;
   deliveryDiscountCents: number;
   discountCents: number;
   totalCents: number;
+  totalPending: boolean;
   discount: { couponId: number; label: string; type: DiscountType } | null;
   couponError: string | null;
   pointsEstimate: number;

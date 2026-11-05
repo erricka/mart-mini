@@ -1,19 +1,31 @@
+/**
+ * Checkout, in order: review the basket → delivery or pickup → delivery details (address, map pin,
+ * today / tomorrow) → contact → rewards → payment → summary (Subtotal / Delivery fee / Total) → place.
+ *
+ * Delivery fee rules (the server is the source of truth, see services/pricing.ts):
+ *  - no location yet → "Enter your delivery address to calculate the fee" (never $0, never "free")
+ *  - while recalculating → loading, and "Place order" is blocked (no stale fee)
+ *  - unsupported location / failed calculation → message next to the address, retry, no fee
+ *  - free delivery only when the location is validated AND the basket meets the shop's rule
+ * Everything entered is kept (session draft) when going back to the basket or retrying.
+ */
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
+import { lazy, Suspense, useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react';
 import { Link, Navigate, useNavigate } from 'react-router-dom';
-import { Button, Card, cx, Field, Input, Notice, Skeleton, Textarea } from '../../components/ui';
+import { metresBetween } from '../../components/maps/shared';
+import { Button, Card, cx, Field, Input, Notice, Skeleton, Spinner, Textarea } from '../../components/ui';
 import { api, ApiError, errorMessage } from '../../lib/api';
 import { useCart } from '../../lib/cart';
+import { useCheckoutDraft, EMPTY_ADDRESS, type Discount } from '../../lib/checkoutDraft';
 import { dayLabel, money } from '../../lib/format';
+import type { GeoAddress } from '../../lib/googleMaps';
 import { useT } from '../../lib/i18n';
 import { useAddresses, useShop } from '../../lib/queries';
 import { useSession } from '../../lib/session';
 import { canRequestContact, haptic, requestTelegramContact } from '../../lib/telegram';
 import { toast } from '../../lib/toast';
-import type { CouponInfo, DeliverySpeed, LatLng, OrderDetail, User, WalletItem } from '../../lib/types';
+import type { Address, CouponInfo, LatLng, OrderDetail, User, WalletItem } from '../../lib/types';
 import { useCartQuote } from './Cart';
-import { metresBetween } from '../../components/maps/shared';
-import type { GeoAddress } from '../../lib/googleMaps';
 
 const MapPicker = lazy(() => import('../../components/MapPicker'));
 
@@ -32,7 +44,10 @@ function checkoutKey() {
   }
 }
 
-type Discount = { kind: 'reward'; id: number } | { kind: 'code'; code: string } | null;
+type FieldKey = 'street' | 'city' | 'name' | 'phone' | 'location' | 'summary';
+type FeeState = 'pickup' | 'loading' | 'error' | 'needs_address' | 'unsupported' | 'unavailable' | 'ok';
+
+const pinOf = (a: Address | undefined): LatLng | null => (a && a.lat != null && a.lng != null ? { lat: a.lat, lng: a.lng } : null);
 
 export function Checkout() {
   const navigate = useNavigate();
@@ -43,70 +58,107 @@ export function Checkout() {
   const clearCart = useCart((s) => s.clear);
   const shop = useShop();
   const addresses = useAddresses();
-
-  const [fulfillment, setFulfillment] = useState<'delivery' | 'pickup'>('delivery');
-  const [addressId, setAddressId] = useState<number | null>(null);
-  const [newAddress, setNewAddress] = useState({ line1: '', line2: '', city: '', instructions: '' });
-  const [addingAddress, setAddingAddress] = useState(false);
-  const [contactName, setContactName] = useState(`${user?.firstName ?? ''} ${user?.lastName ?? ''}`.trim());
-  const [contactPhone, setContactPhone] = useState(user?.phone ?? '');
-  const [discount, setDiscount] = useState<Discount>(null);
+  const d = useCheckoutDraft();
+  const set = d.set;
   const [codeInput, setCodeInput] = useState('');
-  const [note, setNote] = useState('');
-  const [error, setError] = useState<string | null>(null);
-  /** Customer's map pin (distance pricing) and "today / tomorrow" choice. */
-  const [pin, setPin] = useState<LatLng | null>(null);
-  const [speed, setSpeed] = useState<DeliverySpeed>('same_day');
-  const [filledFromMap, setFilledFromMap] = useState(false);
-  const [movedToNew, setMovedToNew] = useState(false);
+  const [attempted, setAttempted] = useState(false);
+  const [serverErrors, setServerErrors] = useState<Partial<Record<FieldKey, string>>>({});
   // Set synchronously on success so clearing the cart doesn't trigger the empty-cart redirect.
   const placed = useRef(false);
+  const deliveryRef = useRef<HTMLElement>(null);
+  const contactRef = useRef<HTMLElement>(null);
+  const summaryRef = useRef<HTMLElement>(null);
 
+  // A draft belongs to one customer; prefill contact details from the profile.
   useEffect(() => {
-    if (shop.data && !shop.data.deliveryEnabled) setFulfillment('pickup');
-  }, [shop.data]);
+    if (user) d.ensureOwner(user.id, `${user.firstName ?? ''} ${user.lastName ?? ''}`.trim(), user.phone ?? '');
+  }, [user?.id]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
-    if (addresses.data && addressId == null) {
-      const def = addresses.data.find((a) => a.isDefault) ?? addresses.data[0];
-      if (def) setAddressId(def.id);
-      else setAddingAddress(true);
-    }
-  }, [addresses.data, addressId]);
-  // Picking a saved address brings back its pin (customers can still fine-tune it).
+    if (shop.data && !shop.data.deliveryEnabled && d.fulfillment === 'delivery') set({ fulfillment: 'pickup' });
+  }, [shop.data]); // eslint-disable-line react-hooks/exhaustive-deps
+  // First visit: pick the default saved address (with its pin), or start a new one.
   useEffect(() => {
-    if (addingAddress) return;
-    const a = addresses.data?.find((x) => x.id === addressId);
-    setPin(a && a.lat != null && a.lng != null ? { lat: a.lat, lng: a.lng } : null);
-  }, [addressId, addingAddress, addresses.data]);
+    if (!addresses.data) return;
+    const chosen = d.addressId != null ? addresses.data.find((a) => a.id === d.addressId) : undefined;
+    if (d.addingAddress || chosen) return;
+    const def = addresses.data.find((a) => a.isDefault) ?? addresses.data[0];
+    if (def) set({ addressId: def.id, pin: pinOf(def) });
+    else set({ addressId: null, addingAddress: true });
+  }, [addresses.data]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const s = shop.data;
+  const delivery = d.fulfillment === 'delivery';
+  const byDistance = s?.deliveryPricing === 'distance';
+  const showMap = byDistance || !!s?.mapsApiKey;
+  const streetOk = d.newAddress.line1.trim().length >= 3;
+  const cityOk = d.newAddress.city.trim().length >= 2;
+  const addressReady = delivery && (d.addingAddress ? streetOk && cityOk : d.addressId != null);
 
   const discountParams = useMemo(
-    () => (discount?.kind === 'reward' ? { customerRewardId: discount.id } : discount?.kind === 'code' ? { couponCode: discount.code } : {}),
-    [discount],
+    () => (d.discount?.kind === 'reward' ? { customerRewardId: d.discount.id } : d.discount?.kind === 'code' ? { couponCode: d.discount.code } : {}),
+    [d.discount],
   );
-  const quoteQ = useCartQuote(fulfillment, discountParams, { location: pin, deliverySpeed: speed });
+  const quoteQ = useCartQuote(d.fulfillment, discountParams, { location: delivery ? d.pin : null, deliverySpeed: d.speed, addressReady });
   const q = quoteQ.data?.quote;
   const wallet: WalletItem[] = quoteQ.data?.discounts.wallet ?? [];
   const publicCoupons: CouponInfo[] = quoteQ.data?.discounts.publicCoupons ?? [];
+  // Anything shown while a new calculation runs is stale: show loading and block the order.
+  const recalculating = quoteQ.isFetching || quoteQ.isPlaceholderData;
+  const quoteFailed = quoteQ.isError && !quoteQ.isFetching;
+  const dq = delivery ? (q?.delivery ?? null) : null;
+  const feeState: FeeState = !delivery
+    ? 'pickup'
+    : quoteFailed
+      ? 'error'
+      : !q || recalculating
+        ? 'loading'
+        : (dq?.status ?? 'needs_address');
 
+  const clientErrors: Partial<Record<FieldKey, string>> = {
+    street: delivery && d.addingAddress && !streetOk ? t('co.err_street') : undefined,
+    city: delivery && d.addingAddress && !cityOk ? t('co.err_city') : undefined,
+    name: !d.contactName.trim() ? t('co.err_name') : undefined,
+    phone: d.contactPhone.trim().length < 5 ? t('co.err_phone') : undefined,
+    location: delivery && byDistance && !d.pin ? t('co.err_pin') : undefined,
+  };
+  const errorFor = (k: FieldKey) => serverErrors[k] ?? (attempted ? clientErrors[k] : undefined) ?? null;
+  const clearServerError = (...keys: FieldKey[]) =>
+    setServerErrors((e) => {
+      const next = { ...e };
+      for (const k of keys) delete next[k];
+      return next;
+    });
+
+  const effectiveFeeCents = q && q.baseDeliveryFeeCents != null ? q.baseDeliveryFeeCents - q.deliveryDiscountCents : null;
   const place = useMutation({
     mutationFn: () =>
       api<{ order: OrderDetail; replayed: boolean }>('/orders', {
         body: {
           items: lines.map((l) => ({ productId: l.productId, quantity: l.quantity })),
-          fulfillmentType: fulfillment,
+          fulfillmentType: d.fulfillment,
           ...discountParams,
           idempotencyKey: checkoutKey(),
           paymentMethod: 'cash',
-          contactName: contactName.trim(),
-          contactPhone: contactPhone.trim(),
-          addressId: fulfillment === 'delivery' && !addingAddress ? addressId : null,
-          location: fulfillment === 'delivery' ? pin : null,
-          deliverySpeed: speed,
+          contactName: d.contactName.trim(),
+          contactPhone: d.contactPhone.trim(),
+          addressId: delivery && !d.addingAddress ? d.addressId : null,
+          location: delivery ? d.pin : null,
+          deliverySpeed: d.speed,
           address:
-            fulfillment === 'delivery' && addingAddress
-              ? { label: 'Home', line1: newAddress.line1, line2: newAddress.line2 || null, city: newAddress.city, instructions: newAddress.instructions || null, save: true }
+            delivery && d.addingAddress
+              ? {
+                  label: 'Home',
+                  line1: d.newAddress.line1,
+                  line2: d.newAddress.line2 || null,
+                  city: d.newAddress.city,
+                  instructions: d.newAddress.instructions || null,
+                  save: true,
+                }
               : null,
-          note: note.trim() || null,
+          note: d.note.trim() || null,
+          // What the customer is looking at — the server re-checks it before creating the order.
+          expectedDeliveryFeeCents: delivery ? effectiveFeeCents : undefined,
+          expectedTotalCents: q?.totalCents,
         },
       }),
     onSuccess: ({ order }) => {
@@ -118,13 +170,40 @@ export function Checkout() {
         /* ignore */
       }
       clearCart();
+      d.reset();
       for (const k of ['orders', 'home', 'rewards', 'addresses', 'products']) qc.invalidateQueries({ queryKey: [k] });
       navigate(`/orders/${order.id}?placed=1`, { replace: true });
     },
     onError: (e) => {
       haptic('error');
-      setError(errorMessage(e));
-      if (e instanceof ApiError && e.status === 409) quoteQ.refetch();
+      const errs: Partial<Record<FieldKey, string>> = {};
+      let target: RefObject<HTMLElement | null> = summaryRef;
+      if (e instanceof ApiError && e.code === 'validation_error' && Array.isArray(e.details)) {
+        for (const issue of e.details as { path: string }[]) {
+          if (issue.path === 'address.line1') errs.street ??= t('co.err_street');
+          else if (issue.path === 'address.city') errs.city ??= t('co.err_city');
+          else if (issue.path === 'contactName') errs.name ??= t('co.err_name');
+          else if (issue.path === 'contactPhone') errs.phone ??= t('co.err_phone');
+        }
+        target = errs.street || errs.city ? deliveryRef : contactRef;
+        if (!Object.keys(errs).length) errs.summary = e.message;
+      } else if (e instanceof ApiError && e.code === 'invalid_phone') {
+        errs.phone = e.message;
+        target = contactRef;
+      } else if (e instanceof ApiError && (e.code === 'address_required' || e.code === 'address_not_found')) {
+        errs.street = e.message;
+        target = deliveryRef;
+      } else if (e instanceof ApiError && e.code.startsWith('delivery_')) {
+        errs.location = e.message;
+        target = deliveryRef;
+      } else {
+        errs.summary = errorMessage(e);
+      }
+      setServerErrors(errs);
+      setAttempted(true);
+      target.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      // Fee/total changed, stock moved, location rejected… → recalculate so the summary is current.
+      if (e instanceof ApiError && e.status === 409) void quoteQ.refetch();
     },
   });
 
@@ -137,74 +216,154 @@ export function Checkout() {
     try {
       const res = await api<{ user: User }>('/me/phone', { method: 'PUT', body: { contactResponse: r.response } });
       setUser(res.user);
-      setContactPhone(res.user.phone ?? '');
+      set({ contactPhone: res.user.phone ?? '' });
+      clearServerError('phone');
       toast(t('co.phone_ok'), 'success');
-    } catch (e) {
-      toast(errorMessage(e), 'error');
+    } catch (err) {
+      toast(errorMessage(err), 'error');
     }
   };
 
-  const s = shop.data;
-  const byDistance = s?.deliveryPricing === 'distance';
-  const showMap = byDistance || !!s?.mapsApiKey;
-
-  const startNewAddress = () => {
-    setAddingAddress(true);
-    setMovedToNew(false);
-    setFilledFromMap(false);
-    setNewAddress({ line1: '', line2: '', city: '', instructions: '' });
+  const chooseSaved = (a: Address) => {
+    set({ addressId: a.id, addingAddress: false, pin: pinOf(a), movedToNew: false });
+    clearServerError('street', 'city', 'location');
+  };
+  const startNewAddress = (keepPin = true) => {
+    set({ addingAddress: true, movedToNew: false, filledFromMap: false, newAddress: EMPTY_ADDRESS, ...(keepPin ? {} : { pin: null }) });
+    clearServerError('street', 'city');
   };
   // Moving the pin well away from the chosen saved address means a different place: start a new address.
   const onPinChange = (p: LatLng) => {
-    setPin(p);
-    const saved = addingAddress ? null : addresses.data?.find((a) => a.id === addressId);
-    if (saved && saved.lat != null && saved.lng != null && metresBetween({ lat: saved.lat, lng: saved.lng }, p) > 200) {
-      startNewAddress();
-      setMovedToNew(true);
-    }
+    clearServerError('location');
+    const saved = d.addingAddress ? undefined : addresses.data?.find((a) => a.id === d.addressId);
+    const savedPin = pinOf(saved);
+    if (savedPin && metresBetween(savedPin, p) > 200) {
+      set({ pin: p, addingAddress: true, movedToNew: true, filledFromMap: false, newAddress: EMPTY_ADDRESS });
+    } else set({ pin: p });
   };
   // Google Maps: the street under the pin fills the new-address form (the customer adds house no. / floor).
   const onMapAddress = (a: GeoAddress) => {
-    if (!addingAddress) return;
-    setNewAddress((n) => ({ ...n, line1: a.line1 || n.line1, city: a.city || n.city }));
-    setFilledFromMap(true);
+    if (!useCheckoutDraft.getState().addingAddress) return;
+    const n = useCheckoutDraft.getState().newAddress;
+    set({ newAddress: { ...n, line1: a.line1 || n.line1, city: a.city || n.city }, filledFromMap: true });
+    clearServerError('street', 'city');
   };
-  const dq = fulfillment === 'delivery' ? q?.delivery : null;
-  const addressReady = addingAddress ? newAddress.line1.trim().length >= 3 && newAddress.city.trim().length >= 2 : addressId != null;
-  const deliveryReady = fulfillment === 'pickup' || (addressReady && (!byDistance || (pin != null && !dq?.tooFar)));
-  const canPlace = !!q?.canPlace && deliveryReady && contactName.trim() && contactPhone.trim().length >= 5 && !(discount && q?.couponError);
-  const deliveryCardText = !s?.deliveryEnabled
-    ? t('co.unavailable_today')
-    : q && fulfillment === 'delivery' && q.delivery?.freeByThreshold
-      ? t('common.free')
-      : byDistance
-        ? dq?.sameDayFeeCents != null
-          ? money(speed === 'next_day' && dq.nextDayFeeCents != null ? dq.nextDayFeeCents : dq.sameDayFeeCents)
-          : t('co.from', { amount: money(Math.min(s.deliveryMinFeeCents, s.nextDayEnabled ? s.nextDayFeeCents : Infinity)) })
-        : s
-          ? money(s.deliveryFeeCents)
-          : '';
+  const editAddress = (patch: Partial<typeof d.newAddress>, field: FieldKey) => {
+    set({ newAddress: { ...d.newAddress, ...patch } });
+    clearServerError(field);
+  };
+  const setDiscount = (x: Discount) => set({ discount: x });
+
   const labelOf = (l: string) => (['Home', 'Work', 'Other'].includes(l) ? t(`pf.label_${l}` as 'pf.label_Home') : l);
+  const count = lines.reduce((n, l) => n + l.quantity, 0);
+  const formOk = !clientErrors.street && !clientErrors.city && !clientErrors.name && !clientErrors.phone;
+  const quoteReady = !!q && !recalculating && !quoteFailed;
+  const deliveryOk = !delivery || feeState === 'ok';
+  const canPlace = quoteReady && deliveryOk && q!.canPlace && !(d.discount && q!.couponError);
+
+  const onPrimary = () => {
+    setAttempted(true);
+    if (feeState === 'error') return void quoteQ.refetch();
+    if (delivery && feeState !== 'ok') return deliveryRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    if (!formOk) {
+      const ref = clientErrors.street || clientErrors.city ? deliveryRef : contactRef;
+      return ref.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+    if (!canPlace) return summaryRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    setServerErrors({});
+    place.mutate();
+  };
+  const primaryLabel =
+    feeState === 'loading'
+      ? t('co.place_calculating')
+      : feeState === 'error'
+        ? t('co.place_retry')
+        : feeState === 'needs_address'
+          ? t('co.place_enter_address')
+          : feeState === 'unsupported' || feeState === 'unavailable'
+            ? t('co.place_fix_address')
+            : t('co.place', { amount: q ? money(q.totalCents) : '' });
+
+  /** The delivery-fee value in the summary — never $0 or "Free delivery" unless validated. */
+  const feeValue = (): ReactNode => {
+    switch (feeState) {
+      case 'loading':
+        return (
+          <span className="inline-flex items-center gap-1.5 font-normal text-muted">
+            <Spinner className="h-3.5 w-3.5" /> {t('co.fee_calculating')}
+          </span>
+        );
+      case 'error':
+        return <span className="font-semibold text-rose-600">{t('co.fee_failed_short')}</span>;
+      case 'needs_address':
+        return <span className="text-right text-sm font-normal text-muted">{t('co.fee_enter_address')}</span>;
+      case 'unsupported':
+        return <span className="text-right text-sm font-semibold text-rose-600">{t('co.fee_unsupported')}</span>;
+      case 'unavailable':
+        return <span className="text-right text-sm font-semibold text-rose-600">{t('co.fee_unavailable')}</span>;
+      case 'ok':
+        if (dq?.freeDelivery || (q && q.deliveryDiscountCents > 0)) {
+          return (
+            <span>
+              <s className="mr-1 font-normal text-muted">{money(dq?.standardFeeCents ?? q?.baseDeliveryFeeCents ?? 0)}</s>
+              <span className="text-brand">{t('co.free_delivery')}</span>
+            </span>
+          );
+        }
+        return money(q!.baseDeliveryFeeCents!);
+      default:
+        return null;
+    }
+  };
+  const totalKnown = quoteReady && !q!.totalPending && deliveryOk;
 
   return (
     <div className="space-y-5">
       <h1 className="text-2xl font-extrabold tracking-tight">{t('co.title')}</h1>
 
-      {/* 1. Delivery or pickup */}
+      {/* 1. Review the basket */}
+      <section>
+        <div className="mb-2 flex items-center justify-between">
+          <h2 className="font-bold">{t('co.your_items', { n: count })}</h2>
+          <Link to="/cart" className="text-sm font-semibold text-brand">
+            {t('co.edit_basket')}
+          </Link>
+        </div>
+        <Card className="space-y-1 text-sm">
+          {lines.slice(0, 3).map((l) => (
+            <div key={l.productId} className="flex justify-between gap-3">
+              <span className="min-w-0 truncate">
+                {l.emoji} {l.name} <span className="text-muted">× {l.quantity}</span>
+              </span>
+              <span className="shrink-0 font-semibold">{money(l.priceCents * l.quantity)}</span>
+            </div>
+          ))}
+          {lines.length > 3 && <div className="text-muted">{t('co.and_more', { n: lines.length - 3 })}</div>}
+        </Card>
+      </section>
+
+      {/* 2. Delivery or pickup */}
       <section>
         <h2 className="mb-2 font-bold">{t('co.how')}</h2>
         <div className="grid grid-cols-2 gap-3">
           <OptionCard
-            active={fulfillment === 'delivery'}
+            active={delivery}
             disabled={!s?.deliveryEnabled}
-            onClick={() => setFulfillment('delivery')}
+            onClick={() => set({ fulfillment: 'delivery' })}
             icon="🚚"
             title={t('co.delivery')}
-            text={deliveryCardText}
+            text={!s?.deliveryEnabled ? t('co.unavailable_today') : t('co.fee_from_address')}
           />
-          <OptionCard active={fulfillment === 'pickup'} disabled={!s?.pickupEnabled} onClick={() => setFulfillment('pickup')} icon="🏪" title={t('co.pickup')} text={s?.pickupEnabled ? t('co.pickup_free') : t('co.unavailable')} />
+          <OptionCard
+            active={!delivery}
+            disabled={!s?.pickupEnabled}
+            onClick={() => set({ fulfillment: 'pickup' })}
+            icon="🏪"
+            title={t('co.pickup')}
+            text={s?.pickupEnabled ? t('co.pickup_free') : t('co.unavailable')}
+          />
         </div>
-        {fulfillment === 'pickup' && s && (
+        {!delivery && s && (
           <Card className="mt-3 text-sm">
             {s.pickupAddress && <div className="font-semibold">📍 {s.pickupAddress}</div>}
             {s.pickupHours && <div className="text-muted">🕒 {s.pickupHours}</div>}
@@ -213,31 +372,31 @@ export function Checkout() {
         )}
       </section>
 
-      {/* 2. Address + map pin — only for delivery. Moving the pin fills in the address (Google Maps). */}
-      {fulfillment === 'delivery' && (
-        <section className="space-y-2">
+      {/* 3. Delivery details: saved address / map pin / new address — messages next to each field */}
+      {delivery && (
+        <section ref={deliveryRef} className="scroll-mt-4 space-y-2">
           <h2 className="font-bold">{t('co.address')}</h2>
           {addresses.isLoading ? (
             <Skeleton className="h-20" />
           ) : (
             <>
-              {!addingAddress &&
+              {!d.addingAddress &&
                 addresses.data?.map((a) => (
                   <button
                     key={a.id}
-                    onClick={() => setAddressId(a.id)}
-                    className={cx('flex w-full items-start gap-3 rounded-2xl bg-surface p-3.5 text-left ring-2 transition', addressId === a.id ? 'ring-brand' : 'ring-line/60')}
+                    onClick={() => chooseSaved(a)}
+                    className={cx('flex w-full items-start gap-3 rounded-2xl bg-surface p-3.5 text-left ring-2 transition', d.addressId === a.id ? 'ring-brand' : 'ring-line/60')}
                   >
                     <span className="text-xl">{a.label === 'Work' ? '🏢' : '🏠'}</span>
                     <span className="min-w-0 flex-1">
                       <span className="block font-semibold">{labelOf(a.label)}</span>
                       <span className="block text-sm text-muted">{[a.line1, a.line2, a.city].filter(Boolean).join(', ')}</span>
                     </span>
-                    {addressId === a.id && <span className="text-brand">●</span>}
+                    {d.addressId === a.id && <span className="text-brand">●</span>}
                   </button>
                 ))}
-              {!addingAddress && (
-                <button className="w-full rounded-2xl border-2 border-dashed border-line p-3 text-sm font-semibold text-muted" onClick={startNewAddress}>
+              {!d.addingAddress && (
+                <button className="w-full rounded-2xl border-2 border-dashed border-line p-3 text-sm font-semibold text-muted" onClick={() => startNewAddress()}>
                   {t('co.add_address')}
                 </button>
               )}
@@ -246,46 +405,59 @@ export function Checkout() {
                 <div className="pt-2">
                   <div className="mb-2 text-sm font-semibold">{t('co.pin_title')}</div>
                   <Suspense fallback={<Skeleton className="h-[260px] rounded-3xl" />}>
-                    <MapPicker value={pin} onChange={onPinChange} store={s?.store} hint={t('co.pin_hint')} onAddress={addingAddress ? onMapAddress : undefined} />
+                    <MapPicker value={d.pin} onChange={onPinChange} store={s?.store} hint={t('co.pin_hint')} onAddress={d.addingAddress ? onMapAddress : undefined} />
                   </Suspense>
-                  {byDistance && (
-                    <div className="mt-2 text-sm">
-                      {!pin ? (
-                        <p className="text-muted">{t('co.pin_needed')}</p>
-                      ) : dq?.tooFar ? (
-                        <Notice tone="error">{t('co.too_far', { max: dq.maxKm ?? '' })}</Notice>
-                      ) : dq?.distanceKm != null ? (
-                        <p className="font-semibold">{t('co.pin_distance', { km: dq.distanceKm })}</p>
-                      ) : null}
-                    </div>
-                  )}
                 </div>
               )}
 
-              {addingAddress && (
+              {/* Delivery messages, right under the map / address. */}
+              <DeliveryMessage
+                state={feeState}
+                distanceKm={dq?.distanceKm ?? null}
+                maxKm={dq?.maxKm ?? null}
+                error={serverErrors.location ?? (attempted ? clientErrors.location : undefined)}
+                needsPin={byDistance}
+                onRetry={() => void quoteQ.refetch()}
+                onPickup={s?.pickupEnabled ? () => set({ fulfillment: 'pickup' }) : undefined}
+              />
+
+              {d.addingAddress && (
                 <Card className="space-y-3">
-                  {movedToNew && <Notice tone="info">{t('co.new_from_map')}</Notice>}
+                  {d.movedToNew && <Notice tone="info">{t('co.new_from_map')}</Notice>}
                   <div className="font-bold">{t('co.new_address')}</div>
-                  {filledFromMap && <p className="text-xs font-semibold text-brand">{t('co.address_filled')}</p>}
-                  <Field label={t('co.street')}>
-                    <Input value={newAddress.line1} onChange={(e) => setNewAddress({ ...newAddress, line1: e.target.value })} placeholder={t('co.street_ph')} autoComplete="address-line1" />
+                  {d.filledFromMap && <p className="text-xs font-semibold text-brand">{t('co.address_filled')}</p>}
+                  <Field label={t('co.street')} error={errorFor('street')}>
+                    <Input
+                      value={d.newAddress.line1}
+                      onChange={(e) => editAddress({ line1: e.target.value }, 'street')}
+                      placeholder={t('co.street_ph')}
+                      autoComplete="address-line1"
+                      aria-invalid={!!errorFor('street')}
+                      className={cx(errorFor('street') && 'border-rose-400')}
+                    />
                   </Field>
                   <Field label={t('co.apt')}>
-                    <Input value={newAddress.line2} onChange={(e) => setNewAddress({ ...newAddress, line2: e.target.value })} autoComplete="address-line2" />
+                    <Input value={d.newAddress.line2} onChange={(e) => editAddress({ line2: e.target.value }, 'street')} autoComplete="address-line2" />
                   </Field>
-                  <Field label={t('co.city')}>
-                    <Input value={newAddress.city} onChange={(e) => setNewAddress({ ...newAddress, city: e.target.value })} autoComplete="address-level2" />
+                  <Field label={t('co.city')} error={errorFor('city')}>
+                    <Input
+                      value={d.newAddress.city}
+                      onChange={(e) => editAddress({ city: e.target.value }, 'city')}
+                      autoComplete="address-level2"
+                      aria-invalid={!!errorFor('city')}
+                      className={cx(errorFor('city') && 'border-rose-400')}
+                    />
                   </Field>
                   <Field label={t('co.directions')}>
-                    <Input value={newAddress.instructions} onChange={(e) => setNewAddress({ ...newAddress, instructions: e.target.value })} placeholder={t('co.directions_ph')} />
+                    <Input value={d.newAddress.instructions} onChange={(e) => editAddress({ instructions: e.target.value }, 'street')} placeholder={t('co.directions_ph')} />
                   </Field>
                   <p className="text-xs text-muted">{t('co.saved_next')}</p>
                   {(addresses.data?.length ?? 0) > 0 && (
                     <button
                       className="text-sm font-semibold text-muted underline"
                       onClick={() => {
-                        setAddingAddress(false);
-                        setMovedToNew(false);
+                        const def = addresses.data!.find((a) => a.id === d.addressId) ?? addresses.data![0];
+                        chooseSaved(def);
                       }}
                     >
                       {t('co.use_saved')}
@@ -298,51 +470,67 @@ export function Checkout() {
         </section>
       )}
 
-      {/* 2c. Today or tomorrow */}
-      {fulfillment === 'delivery' && s?.nextDayEnabled && !dq?.tooFar && (
+      {/* 3b. Today or tomorrow */}
+      {delivery && s?.nextDayEnabled && feeState !== 'unsupported' && (
         <section>
           <h2 className="mb-2 font-bold">{t('co.when')}</h2>
           <div className="grid grid-cols-2 gap-3">
             <OptionCard
-              active={speed === 'same_day'}
-              onClick={() => setSpeed('same_day')}
+              active={d.speed === 'same_day'}
+              onClick={() => set({ speed: 'same_day' })}
               icon=""
               title={t('co.today')}
-              text={
-                dq?.freeByThreshold
-                  ? t('common.free')
-                  : dq?.sameDayFeeCents != null
-                    ? money(dq.sameDayFeeCents)
-                    : byDistance
-                      ? t('co.fee_after_pin')
-                      : money(s.deliveryFeeCents)
-              }
+              text={speedPrice(feeState, dq?.freeDelivery, dq?.sameDayFeeCents, t)}
               sub={byDistance ? t('co.today_text') : undefined}
             />
             <OptionCard
-              active={speed === 'next_day'}
-              onClick={() => setSpeed('next_day')}
+              active={d.speed === 'next_day'}
+              onClick={() => set({ speed: 'next_day' })}
               icon=""
               title={t('co.tomorrow')}
-              text={dq?.freeByThreshold ? t('common.free') : money(dq?.nextDayFeeCents ?? s.nextDayFeeCents)}
+              text={speedPrice(feeState, dq?.freeDelivery, dq?.nextDayFeeCents ?? (feeState === 'ok' ? null : undefined), t)}
               sub={t('co.tomorrow_text', { date: dayLabel(q?.nextDayDate) })}
             />
           </div>
-          {dq?.freeByThreshold && <p className="mt-2 text-sm font-semibold text-brand">{t('co.free_threshold_both')}</p>}
         </section>
       )}
 
-      {/* 3. Contact */}
-      <section>
+      {/* 4. Contact */}
+      <section ref={contactRef} className="scroll-mt-4">
         <h2 className="mb-2 font-bold">{t('co.contact')}</h2>
         <Card className="space-y-3">
-          <Field label={t('co.name')}>
-            <Input value={contactName} onChange={(e) => setContactName(e.target.value)} autoComplete="name" />
+          <Field label={t('co.name')} error={errorFor('name')}>
+            <Input
+              value={d.contactName}
+              onChange={(e) => {
+                set({ contactName: e.target.value });
+                clearServerError('name');
+              }}
+              autoComplete="name"
+              aria-invalid={!!errorFor('name')}
+              className={cx(errorFor('name') && 'border-rose-400')}
+            />
           </Field>
-          <Field label={t('co.phone')} hint={user?.phoneVerified && contactPhone === user.phone ? t('co.phone_verified') : t('co.phone_hint')}>
-            <Input type="tel" inputMode="tel" value={contactPhone} onChange={(e) => setContactPhone(e.target.value)} autoComplete="tel" placeholder="+855 12 345 678" />
+          <Field
+            label={t('co.phone')}
+            error={errorFor('phone')}
+            hint={user?.phoneVerified && d.contactPhone === user.phone ? t('co.phone_verified') : t('co.phone_hint')}
+          >
+            <Input
+              type="tel"
+              inputMode="tel"
+              value={d.contactPhone}
+              onChange={(e) => {
+                set({ contactPhone: e.target.value });
+                clearServerError('phone');
+              }}
+              autoComplete="tel"
+              placeholder="+855 12 345 678"
+              aria-invalid={!!errorFor('phone')}
+              className={cx(errorFor('phone') && 'border-rose-400')}
+            />
           </Field>
-          {!contactPhone && canRequestContact() && (
+          {!d.contactPhone && canRequestContact() && (
             <Button variant="secondary" block onClick={shareContact}>
               {t('ob.share_phone')}
             </Button>
@@ -350,15 +538,15 @@ export function Checkout() {
         </Card>
       </section>
 
-      {/* 4. Rewards & coupons */}
+      {/* 5. Rewards & coupons */}
       <section>
         <h2 className="mb-2 font-bold">{t('co.rewards')}</h2>
         <div className="space-y-2">
           {wallet.map((w) => (
             <DiscountOption
               key={w.id}
-              active={discount?.kind === 'reward' && discount.id === w.id}
-              onClick={() => setDiscount(discount?.kind === 'reward' && discount.id === w.id ? null : { kind: 'reward', id: w.id })}
+              active={d.discount?.kind === 'reward' && d.discount.id === w.id}
+              onClick={() => setDiscount(d.discount?.kind === 'reward' && d.discount.id === w.id ? null : { kind: 'reward', id: w.id })}
               emoji={w.emoji}
               title={w.title}
               text={w.coupon.benefit + (w.coupon.minSubtotalCents ? t('co.min', { amount: money(w.coupon.minSubtotalCents) }) : '')}
@@ -369,8 +557,8 @@ export function Checkout() {
           {publicCoupons.map((c) => (
             <DiscountOption
               key={c.id}
-              active={discount?.kind === 'code' && discount.code === c.code}
-              onClick={() => setDiscount(discount?.kind === 'code' && discount.code === c.code ? null : { kind: 'code', code: c.code! })}
+              active={d.discount?.kind === 'code' && d.discount.code === c.code}
+              onClick={() => setDiscount(d.discount?.kind === 'code' && d.discount.code === c.code ? null : { kind: 'code', code: c.code! })}
               emoji="🏷️"
               title={c.title}
               text={t('co.code', { code: c.code ?? '' }) + (c.minSubtotalCents ? t('co.min', { amount: money(c.minSubtotalCents) }) : '')}
@@ -384,110 +572,91 @@ export function Checkout() {
               {t('co.apply')}
             </Button>
           </div>
-          {discount && q?.couponError && <Notice tone="warn">{q.couponError}</Notice>}
-          {discount && q?.discount && <Notice tone="success">{t('co.applied_msg', { label: q.discount.label })}</Notice>}
+          {d.discount && q?.couponError && <Notice tone="warn">{q.couponError}</Notice>}
+          {d.discount && q?.discount && <Notice tone="success">{t('co.applied_msg', { label: q.discount.label })}</Notice>}
           <p className="text-xs text-muted">{t('co.one_per_order')}</p>
         </div>
       </section>
 
-      {/* 5. Payment — cash on delivery / at pickup */}
+      {/* 6. Payment — cash on delivery / at pickup */}
       <section>
         <h2 className="mb-2 font-bold">{t('co.payment')}</h2>
         <div className="flex items-center gap-3 rounded-2xl bg-surface p-3.5 ring-2 ring-brand">
           <span className="grid h-11 w-11 place-items-center rounded-xl bg-surface-2 text-2xl">💵</span>
           <span className="min-w-0 flex-1">
-            <span className="block font-bold">{fulfillment === 'delivery' ? t('co.cash_delivery') : t('co.cash_pickup')}</span>
-            <span className="block text-sm text-muted">{fulfillment === 'delivery' ? t('co.cash_delivery_text') : t('co.cash_pickup_text')}</span>
+            <span className="block font-bold">{delivery ? t('co.cash_delivery') : t('co.cash_pickup')}</span>
+            <span className="block text-sm text-muted">{delivery ? t('co.cash_delivery_text') : t('co.cash_pickup_text')}</span>
           </span>
         </div>
       </section>
 
       <section>
         <Field label={t('co.note')}>
-          <Textarea value={note} onChange={(e) => setNote(e.target.value)} placeholder={t('co.note_ph')} maxLength={500} />
+          <Textarea value={d.note} onChange={(e) => set({ note: e.target.value })} placeholder={t('co.note_ph')} maxLength={500} />
         </Field>
       </section>
 
-      {/* 6. Summary */}
-      <section>
+      {/* 7. Final total: Subtotal / Delivery fee / Total */}
+      <section ref={summaryRef} className="scroll-mt-4">
         <h2 className="mb-2 font-bold">{t('co.summary')}</h2>
         <Card className="space-y-2">
           {!q ? (
-            <Skeleton className="h-24" />
+            quoteFailed ? (
+              <RetryNotice text={t('co.fee_failed')} onRetry={() => void quoteQ.refetch()} retry={t('common.try_again')} />
+            ) : (
+              <Skeleton className="h-24" />
+            )
           ) : (
             <>
+              <Row label={t('co.subtotal')} value={money(q.subtotalCents)} />
               {q.lines
                 .filter((l) => l.isGift)
                 .map((l) => (
-                  <div key="gift" className="flex justify-between text-sm">
-                    <span>{t('co.gift_line', { name: l.name })}</span>
-                    <span className="font-semibold text-brand">{t('common.free_caps')}</span>
-                  </div>
+                  <Row key="gift" label={t('co.gift_line', { name: l.name })} value={<span className="text-brand">{t('common.free_caps')}</span>} />
                 ))}
-              <Row label={t('co.items', { n: lines.reduce((n, l) => n + l.quantity, 0) })} value={money(q.subtotalCents)} />
-              {fulfillment === 'delivery' && (
-                <Row
-                  label={speed === 'next_day' && s?.nextDayEnabled ? t('co.delivery_fee_tomorrow') : t('co.delivery_fee')}
-                  value={
-                    q.delivery?.needsLocation ? (
-                      <span className="text-muted">{t('co.fee_after_pin')}</span>
-                    ) : q.baseDeliveryFeeCents === 0 ? (
-                      t('common.free_caps')
-                    ) : q.deliveryDiscountCents > 0 ? (
-                      <span>
-                        <s className="text-muted">{money(q.baseDeliveryFeeCents)}</s> {t('common.free_caps')}
-                      </span>
-                    ) : (
-                      money(q.baseDeliveryFeeCents)
-                    )
-                  }
-                />
-              )}
               {q.itemDiscountCents > 0 && <Row label={q.discount?.label ?? t('co.discount')} value={`−${money(q.itemDiscountCents)}`} tone="text-brand" />}
-              {fulfillment === 'delivery' && q.freeDeliveryRemainingCents != null && q.freeDeliveryRemainingCents > 0 && q.deliveryDiscountCents === 0 && (
-                <p className="text-xs text-muted">{t('co.add_for_free', { amount: money(q.freeDeliveryRemainingCents) })}</p>
+              {delivery && (
+                <Row label={d.speed === 'next_day' && s?.nextDayEnabled ? t('co.delivery_fee_tomorrow') : t('co.delivery_fee')} value={feeValue()} />
               )}
+              {delivery && <FreeDeliveryHint feeState={feeState} info={dq} t={t} />}
               <div className="flex items-baseline justify-between border-t border-line pt-2">
-                <span className="font-bold">{t('co.total')}</span>
-                <span className="text-2xl font-black">{money(q.totalCents)}</span>
+                <span className="font-bold">{totalKnown || !delivery ? t('co.total') : t('co.total_pending')}</span>
+                <span className="text-2xl font-black">
+                  {recalculating ? <Spinner className="h-5 w-5 text-muted" /> : totalKnown ? money(q.totalCents) : '—'}
+                </span>
               </div>
-              {q.discountCents > 0 && <p className="text-sm font-semibold text-brand">{t('co.you_save', { amount: money(q.discountCents) })}</p>}
+              {totalKnown && q.discountCents > 0 && <p className="text-sm font-semibold text-brand">{t('co.you_save', { amount: money(q.discountCents) })}</p>}
               {q.pointsEstimate > 0 && (
-                <p className="text-sm font-semibold text-amber-600">{t(fulfillment === 'delivery' ? 'co.points_delivered' : 'co.points_collected', { n: q.pointsEstimate })}</p>
+                <p className="text-sm font-semibold text-amber-600">{t(delivery ? 'co.points_delivered' : 'co.points_collected', { n: q.pointsEstimate })}</p>
               )}
             </>
           )}
         </Card>
-        {q && q.issues.length > 0 && (
+        {quoteFailed && q && <RetryNotice text={t('co.fee_failed')} onRetry={() => void quoteQ.refetch()} retry={t('common.try_again')} className="mt-3" />}
+        {q && !recalculating && q.issues.filter((i) => i !== dq?.message).length > 0 && (
           <Notice tone="error" className="mt-3">
-            {q.issues.map((i) => (
-              <div key={i}>{i}</div>
-            ))}
+            {q.issues
+              .filter((i) => i !== dq?.message)
+              .map((i) => (
+                <div key={i}>{i}</div>
+              ))}
             <Link to="/cart" className="mt-1 inline-block font-bold underline">
               {t('co.review_basket')}
             </Link>
           </Notice>
         )}
-        {error && (
+        {serverErrors.summary && (
           <Notice tone="error" className="mt-3">
-            {error}
+            {serverErrors.summary}
           </Notice>
         )}
       </section>
 
+      {/* One primary action, never active with a pending or stale fee. */}
       <div className="pb-safe fixed inset-x-0 bottom-0 z-40 border-t border-line bg-surface/95 backdrop-blur">
         <div className="mx-auto max-w-xl px-4 py-3">
-          <Button
-            block
-            size="lg"
-            disabled={!canPlace}
-            loading={place.isPending}
-            onClick={() => {
-              setError(null);
-              place.mutate();
-            }}
-          >
-            {t('co.place', { amount: q ? money(q.totalCents) : '' })}
+          <Button block size="lg" disabled={feeState === 'loading' || place.isPending} loading={place.isPending} onClick={onPrimary} variant={canPlace || feeState === 'error' ? 'primary' : 'secondary'}>
+            {primaryLabel}
           </Button>
         </div>
       </div>
@@ -495,11 +664,101 @@ export function Checkout() {
   );
 }
 
-function Row({ label, value, tone }: { label: string; value: React.ReactNode; tone?: string }) {
+function speedPrice(state: FeeState, free: boolean | undefined, cents: number | null | undefined, t: ReturnType<typeof useT>['t']) {
+  if (state !== 'ok') return state === 'loading' ? t('co.fee_calculating') : t('co.fee_enter_address_short');
+  if (cents == null) return t('co.fee_unavailable');
+  return free ? t('co.free_delivery') : money(cents);
+}
+
+/** How the basket stands against the shop's actual free-delivery rule. */
+function FreeDeliveryHint({ feeState, info, t }: { feeState: FeeState; info: { freeRule: { remainingCents: number; met: boolean; minCents: number } | null; freeDelivery: boolean } | null; t: ReturnType<typeof useT>['t'] }) {
+  const rule = info?.freeRule;
+  if (!rule || feeState === 'loading' || feeState === 'error') return null;
+  if (!rule.met) return <p className="text-xs text-muted">{t('co.free_more', { amount: money(rule.remainingCents) })}</p>;
+  if (feeState === 'ok' && info?.freeDelivery) return <p className="text-xs font-semibold text-brand">{t('co.free_qualifies')}</p>;
+  return null; // qualifies by amount, but the address isn't validated yet — say nothing about "free"
+}
+
+function DeliveryMessage({
+  state,
+  distanceKm,
+  maxKm,
+  error,
+  needsPin,
+  onRetry,
+  onPickup,
+}: {
+  state: FeeState;
+  distanceKm: number | null;
+  maxKm: number | null;
+  error?: string;
+  needsPin: boolean;
+  onRetry: () => void;
+  onPickup?: () => void;
+}) {
+  const { t } = useT();
+  if (error && state !== 'ok' && state !== 'loading') {
+    return (
+      <Notice tone="error">
+        {error}
+        {state === 'error' && <RetryButton onRetry={onRetry} label={t('common.try_again')} />}
+      </Notice>
+    );
+  }
+  switch (state) {
+    case 'loading':
+      return (
+        <p className="flex items-center gap-1.5 text-sm text-muted">
+          <Spinner className="h-3.5 w-3.5" /> {t('co.fee_calculating')}
+        </p>
+      );
+    case 'error':
+      return <RetryNotice text={t('co.fee_failed')} onRetry={onRetry} retry={t('common.try_again')} />;
+    case 'needs_address':
+      return <p className="text-sm text-muted">{needsPin ? t('co.pin_needed') : t('co.fee_enter_address')}</p>;
+    case 'unsupported':
+      return (
+        <Notice tone="error">
+          {t('co.too_far', { max: maxKm ?? '' })}
+          {distanceKm != null && <span className="block text-xs opacity-80">{t('co.pin_distance', { km: distanceKm })}</span>}
+          {onPickup && (
+            <button className="mt-1 block font-bold underline" onClick={onPickup}>
+              {t('co.choose_pickup')}
+            </button>
+          )}
+        </Notice>
+      );
+    case 'unavailable':
+      return <Notice tone="error">{t('co.delivery_unavailable')}</Notice>;
+    case 'ok':
+      return distanceKm != null ? <p className="text-sm font-semibold">{t('co.pin_distance', { km: distanceKm })}</p> : null;
+    default:
+      return null;
+  }
+}
+
+function RetryButton({ onRetry, label }: { onRetry: () => void; label: string }) {
   return (
-    <div className={cx('flex justify-between gap-3', tone)}>
+    <button className="mt-1 block font-bold underline" onClick={onRetry}>
+      {label}
+    </button>
+  );
+}
+
+function RetryNotice({ text, onRetry, retry, className }: { text: string; onRetry: () => void; retry: string; className?: string }) {
+  return (
+    <Notice tone="error" className={className}>
+      {text}
+      <RetryButton onRetry={onRetry} label={retry} />
+    </Notice>
+  );
+}
+
+function Row({ label, value, tone }: { label: string; value: ReactNode; tone?: string }) {
+  return (
+    <div className={cx('flex items-start justify-between gap-3', tone)}>
       <span className={tone ? '' : 'text-muted'}>{label}</span>
-      <span className="font-semibold">{value}</span>
+      <span className="text-right font-semibold">{value}</span>
     </div>
   );
 }
