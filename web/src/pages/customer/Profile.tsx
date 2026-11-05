@@ -1,4 +1,5 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { Building2, ChevronRight, Gift, Globe, House, LayoutDashboard, Phone, ReceiptText, ShieldCheck, Star, type LucideIcon } from 'lucide-react';
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { LanguageSwitch } from '../../components/LanguageSwitch';
@@ -28,17 +29,25 @@ export function Profile() {
   return (
     <div>
       <div className="flex flex-col items-center pt-2 text-center">
-        <Avatar name={`${user.firstName} ${user.lastName ?? ''}`} url={user.photoUrl} size={88} />
-        <h1 className="mt-3 text-2xl font-extrabold">{user.firstName} {user.lastName}</h1>
+        <Avatar name={`${user.firstName} ${user.lastName ?? ''}`} url={user.photoUrl} size={72} />
+        <h1 className="mt-3 text-xl font-bold">{user.firstName} {user.lastName}</h1>
         {user.username && <p className="text-sm text-muted">@{user.username}</p>}
-        <div className="mt-2 flex gap-2">
-          {home.data && <Badge className="bg-amber-100 text-amber-900 dark:bg-amber-500/15 dark:text-amber-200">{home.data.level.emoji} {home.data.level.name} · {home.data.balance} pts</Badge>}
-          <Badge className="bg-surface-2">{t('pf.member_since', { date: shortDate(user.createdAt) })}</Badge>
+        <div className="mt-1.5 flex flex-wrap items-center justify-center gap-x-2 text-sm text-muted">
+          {home.data && (
+            <span className="flex items-center gap-1">
+              <Star className="h-3.5 w-3.5 fill-amber-400 text-amber-400" />
+              {home.data.level.name} · {home.data.balance} {t('common.pts')}
+            </span>
+          )}
+          <span>{t('pf.member_since', { date: shortDate(user.createdAt) })}</span>
         </div>
       </div>
 
       <Card className="mt-5 flex items-center justify-between gap-3">
-        <span className="font-semibold">🌐 {t('lang.label')}</span>
+        <span className="flex items-center gap-2.5 font-semibold">
+          <Globe className="h-5 w-5 text-muted" />
+          {t('lang.label')}
+        </span>
         <LanguageSwitch />
       </Card>
 
@@ -47,35 +56,44 @@ export function Profile() {
         <Row label={t('pf.name')} value={`${user.firstName} ${user.lastName ?? ''}`} onEdit={() => setEditName(true)} editLabel={t('common.edit')} />
         <Row
           label={t('pf.phone')}
-          value={user.phone ? <span>{user.phone} {user.phoneVerified && <Badge className="ml-1 bg-emerald-100 text-emerald-800">✓ Telegram</Badge>}</span> : <span className="text-muted">{t('pf.not_added')}</span>}
+          value={user.phone ? <span>{user.phone} {user.phoneVerified && <Badge className="ml-1 bg-brand/10 text-brand"><ShieldCheck className="h-3 w-3" /> Telegram</Badge>}</span> : <span className="text-muted">{t('pf.not_added')}</span>}
           onEdit={() => setEditPhone(true)}
           editLabel={t('common.edit')}
         />
       </Card>
 
       <SectionTitle action={<button className="text-sm font-semibold text-brand" onClick={() => setEditAddress({ label: 'Home' })}>{t('pf.add')}</button>}>{t('pf.addresses')}</SectionTitle>
-      <div className="space-y-2">
-        {addresses.data?.length === 0 && <Card className="text-sm text-muted">{t('pf.no_addresses')}</Card>}
+      <div className="divide-y divide-line rounded-2xl bg-surface">
+        {addresses.data?.length === 0 && <p className="p-4 text-sm text-muted">{t('pf.no_addresses')}</p>}
         {addresses.data?.map((a) => (
-          <Card key={a.id} className="flex items-start gap-3">
-            <span className="text-xl">{a.label === 'Work' ? '🏢' : '🏠'}</span>
+          <div key={a.id} className="flex items-start gap-3 p-4">
+            {a.label === 'Work' ? <Building2 className="mt-0.5 h-5 w-5 shrink-0 text-muted" /> : <House className="mt-0.5 h-5 w-5 shrink-0 text-muted" />}
             <div className="min-w-0 flex-1">
               <div className="font-semibold">{['Home', 'Work', 'Other'].includes(a.label) ? t(`pf.label_${a.label}` as 'pf.label_Home') : a.label} {a.isDefault && <Badge className="ml-1 bg-surface-2">{t('pf.default')}</Badge>}</div>
               <div className="text-sm text-muted">{[a.line1, a.line2, a.city].filter(Boolean).join(', ')}</div>
               {a.instructions && <div className="text-xs text-muted">“{a.instructions}”</div>}
             </div>
             <button className="text-sm font-semibold text-brand" onClick={() => setEditAddress(a)}>{t('common.edit')}</button>
-          </Card>
+          </div>
         ))}
       </div>
 
       <SectionTitle>{t('pf.more')}</SectionTitle>
       <Card className="divide-y divide-line p-0">
-        <LinkRow to="/orders" icon="📦" label={t('pf.my_orders')} />
-        <LinkRow to="/rewards" icon="🎁" label={t('pf.rewards_history')} />
-        <button className="flex w-full items-center gap-3 px-4 py-3.5 text-left font-semibold" onClick={() => setPrivacyOpen(true)}>{t('pf.privacy')}</button>
-        {shop.data?.supportPhone && <a href={`tel:${shop.data.supportPhone}`} className="flex items-center gap-3 px-4 py-3.5 font-semibold">{t('pf.call', { phone: shop.data.supportPhone })}</a>}
-        {isStaff(user) && <LinkRow to="/admin" icon="🧑‍💼" label={t('pf.dashboard')} />}
+        <LinkRow to="/orders" icon={ReceiptText} label={t('pf.my_orders')} />
+        <LinkRow to="/rewards" icon={Gift} label={t('pf.rewards_history')} />
+        <button className={ROW} onClick={() => setPrivacyOpen(true)}>
+          <ShieldCheck className="h-5 w-5 text-muted" />
+          <span className="flex-1">{t('pf.privacy')}</span>
+          <ChevronRight className="h-5 w-5 text-muted" />
+        </button>
+        {shop.data?.supportPhone && (
+          <a href={`tel:${shop.data.supportPhone}`} className={ROW}>
+            <Phone className="h-5 w-5 text-muted" />
+            <span className="flex-1">{t('pf.call', { phone: shop.data.supportPhone })}</span>
+          </a>
+        )}
+        {isStaff(user) && <LinkRow to="/admin" icon={LayoutDashboard} label={t('pf.dashboard')} />}
       </Card>
 
       {!inTelegram && (
@@ -116,10 +134,12 @@ function Row({ label, value, onEdit, editLabel }: { label: string; value: React.
   );
 }
 
-const LinkRow = ({ to, icon, label }: { to: string; icon: string; label: string }) => (
-  <Link to={to} className="flex items-center justify-between px-4 py-3.5 font-semibold">
-    <span>{icon} {label}</span>
-    <span className="text-muted">›</span>
+const ROW = 'flex w-full items-center gap-3 px-4 py-3.5 text-left font-medium';
+const LinkRow = ({ to, icon: Icon, label }: { to: string; icon: LucideIcon; label: string }) => (
+  <Link to={to} className={ROW}>
+    <Icon className="h-5 w-5 text-muted" />
+    <span className="flex-1">{label}</span>
+    <ChevronRight className="h-5 w-5 text-muted" />
   </Link>
 );
 

@@ -1,3 +1,4 @@
+import { WifiOff } from 'lucide-react';
 import { lazy, Suspense, useEffect } from 'react';
 import { Route, Routes } from 'react-router-dom';
 import { Toaster } from './components/Toaster';
@@ -42,7 +43,9 @@ export function App() {
   else if (state.phase === 'error')
     content = (
       <div className="flex min-h-screen flex-col items-center justify-center p-8 text-center">
-        <div className="mb-3 text-5xl">🔌</div>
+        <div className="mb-3 grid h-16 w-16 place-items-center rounded-full bg-surface-2 text-muted">
+          <WifiOff className="h-7 w-7" strokeWidth={1.75} />
+        </div>
         <h1 className="text-lg font-bold">{t('app.cant_open')}</h1>
         <p className="mt-1 max-w-xs text-sm text-muted">{state.message}</p>
         <Button className="mt-5" onClick={retry}>

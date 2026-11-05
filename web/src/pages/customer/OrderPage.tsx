@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { ProductImage } from '../../components/ProductImage';
 import { Timeline } from '../../components/Timeline';
+import { Bell, ChevronRight, CircleCheck, Gift, Star } from 'lucide-react';
 import { Badge, Button, Card, celebrate, ErrorState, Field, PageLoader, Sheet, Textarea } from '../../components/ui';
 import { api, errorMessage } from '../../lib/api';
 import { dateTime, dayLabel, money } from '../../lib/format';
@@ -52,11 +53,13 @@ export function OrderPage() {
   return (
     <div className="space-y-4">
       {justPlaced && o.status !== 'cancelled' && (
-        <div className="animate-rise rounded-3xl bg-gradient-to-br from-green-400 to-emerald-600 p-5 text-white shadow-lg">
-          <div className="text-3xl">🎉</div>
-          <h1 className="mt-1 text-xl font-extrabold">{t('order.placed_title')}</h1>
-          <p className="text-sm text-white/90">{t('order.placed_text')}</p>
-          <button className="mt-2 text-sm font-semibold underline" onClick={() => setParams({}, { replace: true })}>{t('order.dismiss')}</button>
+        <div className="animate-rise flex gap-3 rounded-2xl bg-surface p-4">
+          <CircleCheck className="h-7 w-7 shrink-0 text-brand" strokeWidth={1.9} />
+          <div className="min-w-0">
+            <h1 className="text-lg font-bold">{t('order.placed_title')}</h1>
+            <p className="text-sm text-muted">{t('order.placed_text')}</p>
+            <button className="mt-1.5 text-sm font-semibold text-brand" onClick={() => setParams({}, { replace: true })}>{t('order.dismiss')}</button>
+          </div>
         </div>
       )}
       {askUpdates && o.status !== 'cancelled' && (
@@ -65,23 +68,27 @@ export function OrderPage() {
             await requestBotMessages();
             setAskUpdates(false);
           }}
-          className="flex w-full items-center gap-3 rounded-2xl bg-sky-50 px-4 py-3 text-left text-sm font-semibold text-sky-900 dark:bg-sky-500/10 dark:text-sky-200"
+          className="flex w-full items-center gap-3 rounded-2xl bg-surface p-4 text-left text-sm font-medium"
         >
-          {t('order.allow_updates')}
+          <Bell className="h-5 w-5 shrink-0 text-brand" />
+          <span className="flex-1">{t('order.allow_updates')}</span>
+          <ChevronRight className="h-5 w-5 shrink-0 text-muted" />
         </button>
       )}
 
       <div className="flex items-start justify-between">
         <div>
           <p className="text-sm text-muted">{dateTime(o.placedAt)}</p>
-          <h1 className="text-2xl font-extrabold">{t('order.title', { code: o.code })}</h1>
+          <h1 className="text-[22px] font-bold">{t('order.title', { code: o.code })}</h1>
         </div>
         <Badge className={meta.tone}>{t(`status.${o.status}`)}</Badge>
       </div>
 
 
       <Card className="flex items-center gap-4">
-        <div className="grid h-16 w-16 place-items-center rounded-2xl bg-surface-2 text-4xl">{meta.emoji}</div>
+        <div className={`grid h-12 w-12 shrink-0 place-items-center rounded-full ${meta.tone}`}>
+          <meta.icon className="h-6 w-6" strokeWidth={1.9} />
+        </div>
         <div>
           <div className="text-lg font-bold">{t(`status.${o.status}`)}</div>
           <div className="text-sm text-muted">{o.status === 'cancelled' && o.cancelReason ? o.cancelReason : t(`blurb.${o.status}`)}</div>
@@ -89,7 +96,8 @@ export function OrderPage() {
       </Card>
 
       {o.pointsEstimate > 0 && o.status !== 'cancelled' && (
-        <div className="rounded-2xl bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-900 dark:bg-amber-500/10 dark:text-amber-200">
+        <div className="flex items-center gap-2 rounded-2xl bg-surface px-4 py-3 text-sm">
+          <Star className="h-4 w-4 shrink-0 fill-amber-400 text-amber-400" />
           {o.pointsReversed > 0
             ? t('order.pts_reversed', { n: o.pointsReversed })
             : completed && o.pointsAwarded > 0
@@ -135,7 +143,7 @@ export function OrderPage() {
             <div key={i.id} className="flex items-center gap-3">
               <div className="w-11 shrink-0"><ProductImage emoji={i.emoji} imageUrl={i.imageUrl} size="sm" /></div>
               <div className="min-w-0 flex-1">
-                <div className="truncate text-sm font-semibold">{i.name}{i.isGift && ' 🎁'}</div>
+                <div className="flex items-center gap-1 truncate text-sm">{i.name}{i.isGift && <Gift className="h-3.5 w-3.5 shrink-0 text-brand" />}</div>
                 <div className="text-xs text-muted">{i.quantity} × {i.isGift ? t('order.gift') : money(i.unitPriceCents)}</div>
               </div>
               <div className="text-sm font-semibold">{i.isGift ? t('common.free_caps') : money(i.lineTotalCents)}</div>
@@ -146,7 +154,7 @@ export function OrderPage() {
           <div className="flex justify-between"><span className="text-muted">{t('cart.subtotal')}</span><span>{money(o.subtotalCents)}</span></div>
           {o.fulfillmentType === 'delivery' && <div className="flex justify-between"><span className="text-muted">{t('order.delivery')}</span><span>{o.deliveryFeeCents ? money(o.deliveryFeeCents) : t('common.free_caps')}</span></div>}
           {o.discountCents > 0 && <div className="flex justify-between text-brand"><span>{o.discountLabel ?? t('co.discount')}</span><span>−{money(o.discountCents)}</span></div>}
-          <div className="flex justify-between pt-1 text-base font-extrabold"><span>{t('co.total')}</span><span>{money(o.totalCents)}</span></div>
+          <div className="flex justify-between pt-1 text-base font-bold"><span>{t('co.total')}</span><span>{money(o.totalCents)}</span></div>
           <div className="flex items-center justify-between gap-2 pt-2">
             <span className="text-muted">{t('pay.method_cash')}</span>
             <Badge className={PAYMENT_TONE[o.paymentStatus]}>{t(`pay.${o.paymentStatus}`)}</Badge>

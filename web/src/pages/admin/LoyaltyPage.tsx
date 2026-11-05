@@ -293,7 +293,7 @@ function Milestones({ rewards, disabled, onSaved, currency }: { rewards: AdminRe
       <div className="grid gap-3 sm:grid-cols-2">
         {rewards.map((r) => (
           <div key={r.id} className={cx('flex items-center gap-3 rounded-2xl bg-surface-2 p-3', !r.active && 'opacity-50')}>
-            <div className="grid h-12 w-12 shrink-0 place-items-center rounded-xl bg-gradient-to-br from-amber-200 to-orange-300 text-2xl">{r.emoji}</div>
+            <div className="grid h-12 w-12 shrink-0 place-items-center rounded-full bg-amber-50 text-2xl dark:bg-amber-500/15">{r.emoji}</div>
             <div className="min-w-0 flex-1">
               <div className="font-bold">
                 {r.title} {r.isSurprise && <Badge className="bg-violet-100 text-violet-800">{t('al.surprise')}</Badge>}

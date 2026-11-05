@@ -1,11 +1,12 @@
 /**
- * "📥 Import from Excel" — bulk product upload for the catalog.
+ * "Import from Excel" — bulk product upload for the catalog (the POS "Product List" export as it is).
  * Reads .xlsx (read-excel-file, loaded on demand) or .csv in the browser, maps columns (English or
  * Khmer headers), shows a server-validated preview, then imports the valid rows in one go.
  */
 import { useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef, useState } from 'react';
-import { Badge, Button, cx, Notice, Sheet, Spinner } from '../../components/ui';
+import { Check, ChevronRight, FileSpreadsheet, Info } from 'lucide-react';
+import { Button, cx, Notice, Sheet, Spinner } from '../../components/ui';
 import { api, errorMessage } from '../../lib/api';
 import { money } from '../../lib/format';
 import { useT, type TKey } from '../../lib/i18n';
@@ -165,6 +166,8 @@ interface Preview {
 type ImportField =
   | 'name' | 'nameEn' | 'sku' | 'category' | 'priceCents' | 'compareAtCents' | 'unit'
   | 'description' | 'descriptionEn' | 'emoji' | 'imageUrl' | 'featured' | 'active' | 'stock';
+type Tab = 'create' | 'update' | 'same' | 'error';
+const TABS: Tab[] = ['create', 'update', 'same', 'error'];
 interface PreviewRow {
   row: number;
   action: 'create' | 'update' | 'same' | 'error';
@@ -196,7 +199,7 @@ export function ImportProducts({ open, onClose }: { open: boolean; onClose: () =
   const [unplacedImages, setUnplacedImages] = useState(0);
   const [replacePhotos, setReplacePhotos] = useState(false);
   const [photoProgress, setPhotoProgress] = useState<{ done: number; total: number } | null>(null);
-  const [showSame, setShowSame] = useState(false);
+  const [tab, setTab] = useState<Tab | null>(null);
   const startStockN = Math.max(0, Math.min(1_000_000, Math.round(Number(startStock) || 0)));
   const previewFor = (r: ImportRow[], mode: 'file' | 'keep', start: number) =>
     api<Preview>('/admin/products/import', { body: { dryRun: true, rows: r, stockMode: mode, startStock: start } });
@@ -205,7 +208,7 @@ export function ImportProducts({ open, onClose }: { open: boolean; onClose: () =
     setRowImages(new Map());
     setUnplacedImages(0);
     setPhotoProgress(null);
-    setShowSame(false);
+    setTab(null);
     setRows(null);
     setPreview(null);
     setError(null);
@@ -288,13 +291,12 @@ export function ImportProducts({ open, onClose }: { open: boolean; onClose: () =
   // What will be written: new and changed products, plus products already in the shop that get a photo.
   const photoOnly = (preview?.rows ?? []).filter((r) => r.action === 'same' && photoRows.includes(r.row)).length;
   const valid = preview ? preview.summary.create + preview.summary.update + photoOnly : 0;
-  const shownRows = (preview?.rows ?? []).filter((r) => showSame || r.action !== 'same');
-  const tone = {
-    create: 'bg-emerald-100 text-emerald-800',
-    update: 'bg-sky-100 text-sky-800',
-    same: 'bg-slate-100 text-slate-600 dark:bg-slate-500/20 dark:text-slate-300',
-    error: 'bg-rose-100 text-rose-800',
-  } as const;
+  const counts: Record<Tab, number> = preview
+    ? { create: preview.summary.create, update: preview.summary.update, same: preview.summary.same, error: preview.summary.error }
+    : { create: 0, update: 0, same: 0, error: 0 };
+  // The list shows one group at a time (picked with the count tiles).
+  const activeTab: Tab = tab && counts[tab] > 0 ? tab : (TABS.find((k) => k !== 'same' && counts[k] > 0) ?? 'same');
+  const listRows = (preview?.rows ?? []).filter((r) => r.action === activeTab);
   /** "Price $3.00 → $3.25" / "Changed: name, unit". */
   const changeText = (r: PreviewRow) => {
     const other = (r.changes ?? []).filter((f) => f !== 'priceCents');
@@ -303,20 +305,22 @@ export function ImportProducts({ open, onClose }: { open: boolean; onClose: () =
     if (other.length) parts.push(t('imp.changed', { fields: other.map((f) => t(`imp.f_${f}` as TKey)).join(', ') }));
     return parts.join(' · ');
   };
+  const notes = preview
+    ? [
+        preview.summary.newCategories.length > 0 && t('imp.new_cats', { names: preview.summary.newCategories.join(', ') }),
+        preview.summary.defaultCategoryCount > 0 && t('imp.default_cat', { n: preview.summary.defaultCategoryCount }),
+        preview.summary.roundedPrices > 0 && t('imp.rounded', { n: preview.summary.roundedPrices }),
+        preview.summary.sharedNames.count > 0 &&
+          t('imp.shared_names', { n: preview.summary.sharedNames.count, examples: preview.summary.sharedNames.examples.slice(0, 3).join(', ') }),
+        preview.summary.ignoredImages > 0 && t('imp.ignored_images', { n: preview.summary.ignoredImages }),
+        unplacedImages > 0 && t('imp.photos_unplaced', { n: unplacedImages }),
+      ].filter((x): x is string => !!x)
+    : [];
 
   return (
     <Sheet open={open} onClose={close} title={t('imp.title')} wide>
       {!preview && (
         <div className="space-y-4">
-          <ol className="space-y-1.5 text-sm">
-            <li>{t('imp.step1')}</li>
-            <li>{t('imp.step2')}</li>
-            <li className="text-muted">{t('imp.step3')}</li>
-            <li className="font-semibold text-brand">{t('imp.pos_hint')}</li>
-          </ol>
-          <Button variant="secondary" onClick={downloadTemplate}>
-            {t('imp.template')}
-          </Button>
           <label
             onDragOver={(e) => {
               e.preventDefault();
@@ -330,8 +334,8 @@ export function ImportProducts({ open, onClose }: { open: boolean; onClose: () =
               if (f) void handleFile(f);
             }}
             className={cx(
-              'flex cursor-pointer flex-col items-center justify-center gap-2 rounded-3xl border-2 border-dashed p-8 text-center transition',
-              dragging ? 'border-brand bg-brand/5' : 'border-line hover:border-brand/60',
+              'flex cursor-pointer flex-col items-center justify-center gap-2 rounded-2xl border border-dashed p-10 text-center transition',
+              dragging ? 'border-brand bg-brand/5' : 'border-line bg-surface-2/60 hover:border-brand/60',
             )}
           >
             <input ref={fileRef} type="file" accept=".xlsx,.csv,text/csv" hidden onChange={(e) => e.target.files?.[0] && void handleFile(e.target.files[0])} />
@@ -342,134 +346,169 @@ export function ImportProducts({ open, onClose }: { open: boolean; onClose: () =
               </>
             ) : (
               <>
-                <span className="text-4xl">📄</span>
-                <span className="font-bold text-brand">{t('imp.choose')}</span>
-                <span className="text-xs text-muted">{t('imp.drop')} · .xlsx / .csv</span>
+                <span className="grid h-12 w-12 place-items-center rounded-full bg-brand/10 text-brand">
+                  <FileSpreadsheet className="h-6 w-6" strokeWidth={1.75} />
+                </span>
+                <span className="font-bold">{t('imp.choose')}</span>
+                <span className="text-sm text-muted">{t('imp.drop')}</span>
               </>
             )}
           </label>
-          <div className="rounded-2xl bg-surface-2 p-3 text-xs text-muted">
-            <b className="text-ink">{t('imp.columns')}:</b> {t('imp.columns_text')}
-          </div>
+          <p className="text-sm text-muted">{t('imp.pos_hint')}</p>
           {error && <Notice tone="error">{error}</Notice>}
+          <details className="group text-sm">
+            <summary className="flex cursor-pointer list-none items-center gap-1 font-semibold text-muted">
+              <ChevronRight className="h-4 w-4 transition group-open:rotate-90" />
+              {t('imp.own_sheet')}
+            </summary>
+            <div className="mt-2 space-y-2 pl-5 text-muted">
+              <p>{t('imp.step3')}</p>
+              <p>
+                <b className="text-ink">{t('imp.columns')}:</b> {t('imp.columns_text')}
+              </p>
+              <button className="font-semibold text-brand" onClick={downloadTemplate}>
+                {t('imp.template')}
+              </button>
+            </div>
+          </details>
         </div>
       )}
 
       {preview && (
-        <div className="space-y-3">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <div className="text-sm">
-              <span className="font-semibold">📄 {fileName}</span>
-              <span className="text-muted">
-                {' · '}
-                {t('imp.summary', { create: preview.summary.create, update: preview.summary.update, same: preview.summary.same, error: preview.summary.error })}
-              </span>
-            </div>
-            <button className="text-sm font-semibold text-brand underline" onClick={reset}>
+        <div className="space-y-5">
+          <div className="flex items-center justify-between gap-3 text-sm">
+            <span className="flex min-w-0 items-center gap-2 font-semibold">
+              <FileSpreadsheet className="h-4 w-4 shrink-0 text-muted" />
+              <span className="truncate">{fileName}</span>
+            </span>
+            <button className="shrink-0 font-semibold text-brand" onClick={reset}>
               {t('imp.another')}
             </button>
           </div>
-          {/* Stock choice — preselected to "keep" when the file has no stock (typical POS export).
-              Hidden when nothing will be written: it only matters for new or changed products. */}
-          {valid > 0 && (
-            <div className="space-y-2 rounded-2xl bg-surface-2 p-3.5 text-sm">
-              {!preview.summary.fileHasStock && <p className="font-semibold">{t('imp.stock_none')}</p>}
-              <label className="flex items-start gap-2">
-                <input type="radio" className="mt-1" checked={stockMode === 'keep'} onChange={() => setStockMode('keep')} />
-                <span>
-                  {t('imp.stock_keep')}{' '}
-                  <input
-                    type="number"
-                    min={0}
-                    value={startStock}
-                    onChange={(e) => setStartStock(e.target.value)}
-                    onFocus={() => setStockMode('keep')}
-                    className="mx-1 w-20 rounded-lg border border-line bg-surface px-2 py-0.5 text-center"
-                    aria-label={t('imp.start_stock')}
-                  />
-                  {t('imp.stock_keep_after')}
-                </span>
-              </label>
-              <label className="flex items-start gap-2">
-                <input type="radio" className="mt-1" checked={stockMode === 'file'} onChange={() => setStockMode('file')} />
-                <span>{t('imp.stock_file')}</span>
-              </label>
-            </div>
-          )}
-          {preview.summary.newCategories.length > 0 && <Notice tone="info">{t('imp.new_cats', { names: preview.summary.newCategories.join(', ') })}</Notice>}
-          {preview.summary.defaultCategoryCount > 0 && <Notice tone="info">{t('imp.default_cat', { n: preview.summary.defaultCategoryCount })}</Notice>}
-          {preview.summary.roundedPrices > 0 && <Notice tone="info">{t('imp.rounded', { n: preview.summary.roundedPrices })}</Notice>}
-          {valid > 0 && preview.summary.sharedNames.count > 0 && (
-            <Notice tone="warn">{t('imp.shared_names', { n: preview.summary.sharedNames.count, examples: preview.summary.sharedNames.examples.slice(0, 3).join(', ') })}</Notice>
-          )}
-          {preview.summary.ignoredImages > 0 && <Notice tone="info">{t('imp.ignored_images', { n: preview.summary.ignoredImages })}</Notice>}
-          {rowImages.size > 0 && (
-            <div className="space-y-1.5 rounded-2xl bg-sky-50 p-3.5 text-sm text-sky-900 dark:bg-sky-500/10 dark:text-sky-200">
-              <p className="font-semibold">{t('imp.photos_found', { n: rowImages.size, used: photoRows.length })}</p>
-              <label className="flex items-center gap-2">
-                <input type="checkbox" checked={replacePhotos} onChange={(e) => setReplacePhotos(e.target.checked)} />
-                {t('imp.replace_photos')}
-              </label>
-            </div>
-          )}
-          {unplacedImages > 0 && <Notice tone="warn">{t('imp.photos_unplaced', { n: unplacedImages })}</Notice>}
-          {preview.summary.error > 0 && <Notice tone="warn">{t('imp.errors_skipped')}</Notice>}
-          {valid === 0 && preview.summary.same > 0 && <Notice tone="success">{t('imp.nothing_new')}</Notice>}
-          {preview.summary.same > 0 && (
-            <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl bg-surface-2 px-3.5 py-2.5 text-sm">
-              <span>{t('imp.same_skipped', { n: preview.summary.same })}</span>
-              <button className="font-semibold text-brand underline" onClick={() => setShowSame((v) => !v)}>
-                {showSame ? t('imp.same_hide') : t('imp.same_show')}
+
+          {/* Counts — also pick which group the list shows. */}
+          <div className="grid grid-cols-4 gap-2">
+            {TABS.map((k) => (
+              <button
+                key={k}
+                onClick={() => counts[k] > 0 && setTab(k)}
+                disabled={counts[k] === 0}
+                className={cx(
+                  'rounded-2xl px-2 py-3 text-center transition',
+                  activeTab === k && counts[k] > 0 ? 'bg-surface ring-2 ring-ink/80' : 'bg-surface-2',
+                  counts[k] === 0 && 'opacity-50',
+                )}
+              >
+                <span className={cx('block text-xl font-bold tabular-nums', k === 'error' && counts[k] > 0 && 'text-rose-600')}>{counts[k]}</span>
+                <span className="block text-xs leading-tight text-muted">{t(`imp.tile_${k}`)}</span>
               </button>
+            ))}
+          </div>
+
+          {valid === 0 ? (
+            <div className="flex flex-col items-center px-4 py-4 text-center">
+              <span className="grid h-12 w-12 place-items-center rounded-full bg-brand/10 text-brand">
+                <Check className="h-6 w-6" strokeWidth={2.5} />
+              </span>
+              <h3 className="mt-3 font-bold">{counts.same > 0 ? t('imp.all_in_shop_title') : t('imp.nothing_to_upload')}</h3>
+              <p className="mt-1 text-sm text-muted">{counts.same > 0 ? t('imp.all_in_shop_text') : t('imp.fix_and_retry')}</p>
             </div>
+          ) : (
+            <>
+              <section className="space-y-2">
+                <h3 className="text-sm font-bold">{t('imp.stock_title')}</h3>
+                {!preview.summary.fileHasStock && <p className="text-sm text-muted">{t('imp.stock_none')}</p>}
+                <label className="flex items-center gap-3 text-sm">
+                  <input type="radio" className="h-4 w-4 accent-[var(--brand)]" checked={stockMode === 'keep'} onChange={() => setStockMode('keep')} />
+                  <span className="flex flex-wrap items-center gap-x-1.5 gap-y-1">
+                    {t('imp.stock_keep')}
+                    <input
+                      type="number"
+                      min={0}
+                      value={startStock}
+                      onChange={(e) => setStartStock(e.target.value)}
+                      onFocus={() => setStockMode('keep')}
+                      className="w-16 rounded-lg border border-line bg-surface px-2 py-0.5 text-center"
+                      aria-label={t('imp.start_stock')}
+                    />
+                    {t('imp.stock_keep_after')}
+                  </span>
+                </label>
+                <label className="flex items-center gap-3 text-sm">
+                  <input type="radio" className="h-4 w-4 accent-[var(--brand)]" checked={stockMode === 'file'} onChange={() => setStockMode('file')} />
+                  {t('imp.stock_file')}
+                </label>
+              </section>
+
+              {rowImages.size > 0 && (
+                <section className="space-y-2">
+                  <h3 className="text-sm font-bold">{t('imp.photos_title')}</h3>
+                  <p className="text-sm text-muted">{t('imp.photos_found', { n: rowImages.size, used: photoRows.length })}</p>
+                  <label className="flex items-center gap-3 text-sm">
+                    <input type="checkbox" className="h-4 w-4 accent-[var(--brand)]" checked={replacePhotos} onChange={(e) => setReplacePhotos(e.target.checked)} />
+                    {t('imp.replace_photos')}
+                  </label>
+                </section>
+              )}
+
+              {notes.length > 0 && (
+                <section className="space-y-1.5">
+                  <h3 className="text-sm font-bold">{t('imp.notes_title')}</h3>
+                  <ul className="space-y-1.5 text-sm text-muted">
+                    {notes.map((n) => (
+                      <li key={n} className="flex gap-2">
+                        <Info className="mt-0.5 h-4 w-4 shrink-0" />
+                        <span>{n}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </section>
+              )}
+            </>
           )}
-          {shownRows.length > 0 && (
-            <div className="max-h-[45vh] overflow-auto rounded-2xl ring-1 ring-line">
-              <table className="w-full text-sm">
-                <thead className="sticky top-0 bg-surface text-left text-xs text-muted">
-                  <tr>
-                    <th className="hidden px-3 py-2 sm:table-cell">{t('imp.col_row')}</th>
-                    <th className="px-3 py-2">{t('imp.col_name')}</th>
-                    <th className="px-3 py-2">{t('imp.col_category')}</th>
-                    <th className="px-3 py-2 text-right">{t('imp.col_price')}</th>
-                    <th className="px-3 py-2 text-right">{t('imp.col_stock')}</th>
-                    <th className="px-3 py-2">{t('imp.col_result')}</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-line">
-                  {shownRows.slice(0, 300).map((r) => (
-                    <tr key={r.row} className={cx(r.action === 'error' && 'bg-rose-50/60 dark:bg-rose-500/5')}>
-                      <td className="hidden px-3 py-2 text-muted sm:table-cell">{r.row}</td>
-                      <td className="px-3 py-2">
-                        <div className="font-semibold">{r.name || '—'}</div>
-                        {r.action === 'update' && <div className="mt-0.5 text-xs text-sky-800 dark:text-sky-300">{changeText(r)}</div>}
-                      </td>
-                      <td className="px-3 py-2">{r.category || '—'}</td>
-                      <td className="px-3 py-2 text-right tabular-nums">{r.priceCents != null ? money(r.priceCents) : '—'}</td>
-                      <td className="px-3 py-2 text-right tabular-nums">{r.stock ?? '—'}</td>
-                      <td className="px-3 py-2">
-                        <Badge className={tone[r.action]}>{t(`imp.${r.action}`)}</Badge>
-                        {r.error && (
-                          <div className="mt-0.5 text-xs text-rose-700 dark:text-rose-300">
-                            <span className="sm:hidden">
-                              {t('imp.col_row')} {r.row} ·{' '}
-                            </span>
-                            {r.error}
-                          </div>
+
+          {/* The rows of the selected group. */}
+          {listRows.length > 0 && (
+            <section className="space-y-2">
+              <h3 className="text-sm font-bold">
+                {t(`imp.tile_${activeTab}`)} · {listRows.length}
+              </h3>
+              {activeTab === 'error' && <p className="text-sm text-muted">{t('imp.errors_skipped')}</p>}
+              <ul className="max-h-[40vh] divide-y divide-line overflow-auto rounded-2xl ring-1 ring-line">
+                {listRows.slice(0, 300).map((r) => (
+                  <li key={r.row} className="flex items-start justify-between gap-3 px-3.5 py-2.5 text-sm">
+                    <div className="min-w-0">
+                      <div className="truncate font-semibold">{r.name || '—'}</div>
+                      <div className="text-xs text-muted">
+                        {activeTab === 'error' ? (
+                          <span className="text-rose-600">
+                            {t('imp.row', { row: r.row })} · {r.error}
+                          </span>
+                        ) : activeTab === 'update' ? (
+                          changeText(r)
+                        ) : (
+                          [r.category, r.stock != null && activeTab === 'create' ? t('imp.in_stock', { n: r.stock }) : null].filter(Boolean).join(' · ')
                         )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                      </div>
+                    </div>
+                    <span className="shrink-0 tabular-nums">{r.priceCents != null ? money(r.priceCents) : '—'}</span>
+                  </li>
+                ))}
+              </ul>
+              {listRows.length > 300 && <p className="text-xs text-muted">{t('imp.showing', { n: 300 })}</p>}
+            </section>
           )}
-          {shownRows.length > 300 && <p className="text-xs text-muted">{t('imp.showing', { n: 300 })}</p>}
-          <p className="text-xs text-muted">{t('imp.photos_hint')}</p>
+
           {error && <Notice tone="error">{error}</Notice>}
-          <Button block size="lg" disabled={valid === 0} loading={busy === 'import'} onClick={confirm}>
-            {photoProgress && busy === 'import' ? t('imp.uploading_photos', { done: photoProgress.done, total: photoProgress.total }) : t('imp.confirm', { n: valid })}
-          </Button>
+          {valid === 0 ? (
+            <Button block size="lg" variant="secondary" onClick={close}>
+              {t('imp.done_btn')}
+            </Button>
+          ) : (
+            <Button block size="lg" loading={busy === 'import'} onClick={confirm}>
+              {photoProgress && busy === 'import' ? t('imp.uploading_photos', { done: photoProgress.done, total: photoProgress.total }) : t('imp.confirm', { n: valid })}
+            </Button>
+          )}
         </div>
       )}
     </Sheet>

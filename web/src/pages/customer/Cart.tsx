@@ -1,4 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
+import { ShoppingBasket, Star } from 'lucide-react';
 import { useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { ProductImage } from '../../components/ProductImage';
@@ -55,7 +56,7 @@ export function Cart() {
   if (lines.length === 0) {
     return (
       <EmptyState
-        emoji="🧺"
+        emoji={<ShoppingBasket className="h-9 w-9" strokeWidth={1.5} />}
         title={t('cart.empty_title')}
         text={t('cart.empty_text')}
         action={<Link to="/shop"><Button size="lg">{t('cart.start')}</Button></Link>}
@@ -77,7 +78,7 @@ export function Cart() {
   return (
     <div>
       <div className="mb-4 flex items-center justify-between">
-        <h1 className="text-2xl font-extrabold tracking-tight">{t('cart.title')}</h1>
+        <h1 className="text-[22px] font-bold">{t('cart.title')}</h1>
         <button className="text-sm font-semibold text-muted" onClick={clear}>{t('cart.clear')}</button>
       </div>
 
@@ -88,17 +89,17 @@ export function Cart() {
         </Notice>
       )}
 
-      <div className="space-y-2.5">
+      <div className="divide-y divide-line rounded-2xl bg-surface px-3">
         {lines.map((l) => {
           const ql = q?.lines.find((x) => x.productId === l.productId && !x.isGift);
           const gone = q?.missingProductIds.includes(l.productId);
           return (
-            <Card key={l.productId} className="flex items-center gap-3 p-3">
-              <Link to={`/product/${l.productId}`} className="w-16 shrink-0">
+            <div key={l.productId} className="flex items-center gap-3 py-3">
+              <Link to={`/product/${l.productId}`} className="w-14 shrink-0">
                 <ProductImage emoji={l.emoji} imageUrl={l.imageUrl} size="sm" />
               </Link>
               <div className="min-w-0 flex-1">
-                <div className="truncate font-semibold">{l.name}</div>
+                <div className="truncate text-[15px]">{l.name}</div>
                 <div className="text-xs text-muted">{l.unit} · {money(ql?.unitPriceCents ?? l.priceCents)}</div>
                 {gone ? (
                   <div className="text-xs font-semibold text-rose-600">{t('cart.no_longer')}</div>
@@ -111,7 +112,7 @@ export function Cart() {
                 )}
               </div>
               <QtyStepper size="sm" value={l.quantity} max={Math.max(1, Math.min(l.stock, 99))} onChange={(v) => setQty(l.productId, v)} />
-            </Card>
+            </div>
           );
         })}
       </div>
@@ -119,7 +120,7 @@ export function Cart() {
       {/* Progress against the shop's actual free-delivery rule. Free delivery itself is only applied at
           checkout, once the address is validated — so no "free delivery" fee label here. */}
       {freeMin != null && shop.data?.deliveryEnabled && (
-        <Card className="mt-4">
+        <Card className="mt-3">
           {subtotal >= freeMin ? (
             <p className="text-sm font-semibold">{t('cart.free_reached', { min: money(freeMin) })}</p>
           ) : (
@@ -131,13 +132,16 @@ export function Cart() {
         </Card>
       )}
 
-      <Card className="mt-4 space-y-1.5">
+      <Card className="mt-3 space-y-2">
         <div className="flex justify-between"><span className="text-muted">{t('co.subtotal')}</span><span className="font-semibold">{money(subtotal)}</span></div>
         {shop.data?.deliveryEnabled && (
           <div className="flex justify-between gap-3 text-sm"><span className="text-muted">{t('co.delivery_fee')}</span><span className="text-right text-muted">{t('cart.fee_at_checkout')}</span></div>
         )}
         {quote.isFetching && !q ? <Skeleton className="h-4 w-32" /> : q && q.pointsEstimate > 0 && (
-          <div className="pt-1 text-sm font-semibold text-amber-600">{t('cart.earn_about', { n: q.pointsEstimate })}</div>
+          <div className="flex items-center gap-1 pt-1 text-sm text-muted">
+            <Star className="h-3.5 w-3.5 fill-amber-400 text-amber-400" />
+            {t('cart.earn_about', { n: q.pointsEstimate })}
+          </div>
         )}
       </Card>
 
@@ -149,7 +153,7 @@ export function Cart() {
           size="lg"
           disabled={!q || issues.length > 0 || (q?.missingProductIds.length ?? 0) > 0 || (q?.minOrderRemainingCents ?? 0) > 0}
           onClick={() => navigate('/checkout')}
-          className="shadow-xl"
+          className="shadow-lg shadow-black/10"
         >
           {t('cart.continue')}
         </Button>

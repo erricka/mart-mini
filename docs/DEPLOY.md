@@ -133,7 +133,7 @@ You can now open **`https://t.me/<your_bot>?startapp=store`**, which is what the
      - aisle, price, and an optional "was" price for promotions
      - starting stock and barcode/SKU
      - photo (📷 upload; square works best)
-   - **📥 នាំចូលពី Excel (Import from Excel):** upload your whole product list at once. See *Adding products from Excel* below.
+   - **នាំចូលពី Excel (Import from Excel):** upload your whole product list at once. See *Adding products from Excel* below.
 
    Products you hide (*Visible* off) or that run out of stock can't be ordered. Customers see "out of stock".
 3. **កម្មវិធីសមាជិក (Loyalty):**
@@ -146,7 +146,7 @@ You can now open **`https://t.me/<your_bot>?startapp=store`**, which is what the
 
 ## Adding products from Excel
 
-1. **Dashboard → ទំនិញ → 📥 នាំចូលពី Excel → ⬇ ទាញយកគំរូ (Download template).** You get `mart25-products-template.csv`, which opens in Excel or Google Sheets.
+1. **Dashboard → ទំនិញ → នាំចូលពី Excel → ⬇ ទាញយកគំរូ (Download template).** You get `mart25-products-template.csv`, which opens in Excel or Google Sheets.
 2. Put **one product per row**. Keep the first row (the column names) as it is.
 
    | Column | Required | Example |
@@ -187,9 +187,9 @@ Upload the POS system's **Product List** `.xlsx` exactly as exported; there's no
 
 There are three ways to add photos. All of them shrink the photo in the browser and keep it in the shop's own database, so nothing extra to pay for.
 
-1. **Pictures inside the POS file.** If the export's `Image` column holds pictures, the import finds each one and puts it on the product in that row. Existing photos are kept unless you tick **Replace photos that products already have**. Pictures placed with Excel 365's "Place in cell" can't be read; the preview counts them.
-2. **📷 Upload photos (many at once).** Name each photo after the product's **barcode/code** (`8934868197911.jpg`) or its **exact name** (`សាប៊ូទឹក Downy.jpg`). Select them all, check the matches in the preview, then save. Unknown or ambiguous names are flagged and skipped.
-3. **One product at a time.** The **📷 No photo** filter lists products still without a photo. Tap the 📷 on a product to take or choose a photo, or open **កែប្រែ (Edit) → 📷 ផ្ទុករូបថត (Upload photo)**.
+1. **Pictures inside the POS file.** If the export's `Image` column holds pictures, the import finds each one and puts it on the product in that row. Existing photos are kept unless you tick **Replace photos products already have**. Pictures placed with Excel 365's "Place in cell" can't be read; the preview counts them.
+2. **Upload photos (many at once).** Name each photo after the product's **barcode/code** (`8934868197911.jpg`) or its **exact name** (`សាប៊ូទឹក Downy.jpg`). Select them all, check the matches in the preview, then save. Unknown or ambiguous names are flagged and skipped.
+3. **One product at a time.** The **No photo** filter lists products still without a photo. Tap the camera button on a product to take or choose a photo, or open **កែប្រែ (Edit) → ផ្ទុករូបថត (Upload photo)**.
 
 You can also put `https://` photo links in the `image_url` column before importing.
 

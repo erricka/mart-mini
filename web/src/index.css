@@ -3,24 +3,25 @@
 @custom-variant dark (&:where(.dark, .dark *));
 
 :root {
-  --bg: #f5f7f2;
+  /* Clean, neutral palette: light-grey page, white cards, one green for actions. */
+  --bg: #f5f6f5;
   --surface: #ffffff;
-  --surface-2: #eef3ea;
-  --ink: #12201a;
-  --muted: #5f6f68;
-  --line: #e2e8e0;
+  --surface-2: #f0f1f0;
+  --ink: #1b1d1c;
+  --muted: #6a6f6c;
+  --line: #e6e8e6;
   --brand: #16a34a;
   --brand-ink: #ffffff;
   --sun: #f59e0b;
   color-scheme: light;
 }
 .dark {
-  --bg: #0e1411;
-  --surface: #17201b;
-  --surface-2: #1f2a24;
-  --ink: #ecf3ee;
-  --muted: #9aaba3;
-  --line: #2a3731;
+  --bg: #0f1110;
+  --surface: #191b1a;
+  --surface-2: #232625;
+  --ink: #eff1f0;
+  --muted: #9ba19e;
+  --line: #2c2f2e;
   --brand: #22c55e;
   --brand-ink: #062b14;
   color-scheme: dark;
@@ -55,7 +56,7 @@ html[lang="km"] .leading-tight, html[lang="km"] .leading-none { line-height: 1.4
 html[lang="km"] .uppercase { text-transform: none; letter-spacing: 0; }
 button { cursor: pointer; }
 button:disabled { cursor: not-allowed; }
-:focus-visible { outline: 3px solid color-mix(in srgb, var(--brand) 55%, transparent); outline-offset: 2px; border-radius: 12px; }
+:focus-visible { outline: 2px solid color-mix(in srgb, var(--brand) 60%, transparent); outline-offset: 2px; border-radius: 12px; }
 
 .pb-safe { padding-bottom: max(env(safe-area-inset-bottom), 0px); }
 .no-scrollbar::-webkit-scrollbar { display: none; }
@@ -95,8 +96,8 @@ button:disabled { cursor: not-allowed; }
 .print-only { display: none; }
 
 /* Chart palette (validated with the dataviz validator against the app surfaces, light + dark). */
-:root { --viz-1: #2a78d6; --viz-2: #eb6834; --viz-grid: #e8ece6; }
-.dark { --viz-1: #3987e5; --viz-2: #d95926; --viz-grid: #26322c; }
+:root { --viz-1: #2a78d6; --viz-2: #eb6834; --viz-grid: #e8eae8; }
+.dark { --viz-1: #3987e5; --viz-2: #d95926; --viz-grid: #2a2d2c; }
 
 /* Map: store marker */
 .map-store-marker { display: grid; place-items: center; width: 34px; height: 34px; border-radius: 9999px; background: #fff; box-shadow: 0 2px 8px rgb(0 0 0 / .25); font-size: 20px; }

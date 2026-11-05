@@ -195,7 +195,7 @@ function SettingsForm({ data }: { data: LoyaltyData }) {
                 {t('as.dm_find')}
               </Button>
             </div>
-            <Suspense fallback={<Skeleton className="h-[300px] rounded-3xl" />}>
+            <Suspense fallback={<Skeleton className="h-[300px] rounded-2xl" />}>
               <MapPicker value={storePin} onChange={(p) => !d && setStorePin(p)} pinEmoji="🏪" height={300} hint={t('as.dm_store_hint')} />
             </Suspense>
             {storePin && (

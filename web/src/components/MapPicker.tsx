@@ -3,6 +3,7 @@
  * under it. Uses Google Maps (with address auto-fill) when the shop has a Google Maps key, otherwise
  * — or if Google can't load — the free OpenStreetMap map. Loaded lazily.
  */
+import { LocateFixed, MapPin } from 'lucide-react';
 import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { allowGoogle, reverseGeocode, type GeoAddress } from '../lib/googleMaps';
 import { useT } from '../lib/i18n';
@@ -107,7 +108,7 @@ export default function MapPicker({
 
   return (
     <div className="space-y-2">
-      <div className="relative isolate overflow-hidden rounded-3xl ring-1 ring-line" style={{ height }}>
+      <div className="relative isolate overflow-hidden rounded-xl ring-1 ring-line" style={{ height }}>
         {deciding ? (
           fallback
         ) : (
@@ -125,8 +126,9 @@ export default function MapPicker({
           type="button"
           onClick={locate}
           disabled={locating}
-          className={cx('absolute bottom-3 right-3 z-[500] rounded-full bg-surface px-3.5 py-2 text-sm font-bold shadow-lg ring-1 ring-line', locating && 'opacity-70')}
+          className={cx('absolute bottom-3 right-3 z-[500] flex items-center gap-1.5 rounded-full bg-surface px-3.5 py-2 text-sm font-semibold shadow-md ring-1 ring-line', locating && 'opacity-70')}
         >
+          <LocateFixed className="h-4 w-4 text-brand" />
           {locating ? t('map.locating') : t('map.use_my_location')}
         </button>
       </div>
@@ -135,7 +137,10 @@ export default function MapPicker({
           {address.status === 'looking' ? (
             <span className="text-muted">{t('map.looking_up')}</span>
           ) : address.status === 'found' ? (
-            <span className="font-semibold">📍 {address.text}</span>
+            <span className="flex items-start gap-1.5 font-semibold">
+              <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-brand" />
+              {address.text}
+            </span>
           ) : (
             <span className="text-muted">{t('map.no_address')}</span>
           )}

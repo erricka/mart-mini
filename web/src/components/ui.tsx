@@ -1,4 +1,5 @@
 import confetti from 'canvas-confetti';
+import { CircleAlert, CircleCheck, Info, TriangleAlert, X } from 'lucide-react';
 import { useEffect, useRef, useState, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode, type TextareaHTMLAttributes } from 'react';
 import { useT } from '../lib/i18n';
 import { haptic } from '../lib/telegram';
@@ -8,8 +9,8 @@ export { cx };
 
 type BtnVariant = 'primary' | 'secondary' | 'ghost' | 'danger' | 'sun';
 const BTN: Record<BtnVariant, string> = {
-  primary: 'bg-brand text-brand-ink shadow-sm shadow-green-900/10 hover:brightness-105 active:brightness-95',
-  secondary: 'bg-surface-2 text-ink hover:brightness-[0.98] active:brightness-95',
+  primary: 'bg-brand text-brand-ink hover:brightness-105 active:brightness-95',
+  secondary: 'bg-surface-2 text-ink hover:brightness-[0.97] active:brightness-95',
   ghost: 'bg-transparent text-ink hover:bg-surface-2',
   danger: 'bg-rose-600 text-white hover:bg-rose-700',
   sun: 'bg-amber-400 text-amber-950 hover:bg-amber-300',
@@ -34,10 +35,10 @@ export function Button({
       }}
       disabled={rest.disabled || loading}
       className={cx(
-        'inline-flex select-none items-center justify-center gap-2 rounded-2xl font-semibold transition active:scale-[0.98] disabled:opacity-50 disabled:active:scale-100',
+        'inline-flex select-none items-center justify-center gap-2 rounded-xl font-semibold transition active:scale-[0.98] disabled:opacity-40 disabled:active:scale-100',
         size === 'sm' && 'min-h-9 px-3 text-sm',
-        size === 'md' && 'min-h-12 px-5',
-        size === 'lg' && 'min-h-14 px-6 text-lg',
+        size === 'md' && 'min-h-11 px-5',
+        size === 'lg' && 'min-h-[52px] px-6 text-base',
         block && 'w-full',
         BTN[variant],
         className,
@@ -50,7 +51,7 @@ export function Button({
 }
 
 export const Card = ({ className, children, ...rest }: { className?: string; children: ReactNode } & React.HTMLAttributes<HTMLDivElement>) => (
-  <div {...rest} className={cx('rounded-3xl bg-surface p-4 shadow-sm shadow-black/[0.03] ring-1 ring-line/60', className)}>
+  <div {...rest} className={cx('rounded-2xl bg-surface', !/(^|\s)p-[\d.]+/.test(className ?? '') && 'p-4', className)}>
     {children}
   </div>
 );
@@ -68,10 +69,10 @@ export const Spinner = ({ className }: { className?: string }) => (
 
 export const Skeleton = ({ className }: { className?: string }) => <div className={cx('skeleton rounded-2xl', className)} />;
 
-export function EmptyState({ emoji, title, text, action }: { emoji: string; title: string; text?: string; action?: ReactNode }) {
+export function EmptyState({ emoji, title, text, action }: { emoji: ReactNode; title: string; text?: string; action?: ReactNode }) {
   return (
     <div className="animate-rise flex flex-col items-center px-6 py-14 text-center">
-      <div className="animate-float mb-4 text-6xl">{emoji}</div>
+      <div className="mb-4 grid h-20 w-20 place-items-center rounded-full bg-surface-2 text-4xl text-muted">{emoji}</div>
       <h3 className="text-lg font-bold">{title}</h3>
       {text && <p className="mt-1 max-w-xs text-sm text-muted">{text}</p>}
       {action && <div className="mt-5">{action}</div>}
@@ -84,7 +85,9 @@ export function ErrorState({ error, onRetry }: { error: unknown; onRetry?: () =>
   const message = error instanceof Error ? error.message : t('common.error_generic');
   return (
     <div className="flex flex-col items-center px-6 py-12 text-center">
-      <div className="mb-3 text-5xl">😕</div>
+      <div className="mb-3 grid h-16 w-16 place-items-center rounded-full bg-surface-2 text-muted">
+        <CircleAlert className="h-7 w-7" strokeWidth={1.75} />
+      </div>
       <h3 className="font-bold">{t('common.error_title')}</h3>
       <p className="mt-1 max-w-xs text-sm text-muted">{message}</p>
       {onRetry && (
@@ -117,7 +120,7 @@ export function Field({ label, hint, error, children }: { label: string; hint?: 
 }
 
 const inputCls =
-  'w-full rounded-2xl border border-line bg-surface px-4 py-3 text-base text-ink placeholder:text-muted/70 outline-none transition focus:border-brand focus:ring-4 focus:ring-brand/15';
+  'w-full rounded-xl border border-line bg-surface px-4 py-3 text-base text-ink placeholder:text-muted/70 outline-none transition focus:border-brand focus:ring-2 focus:ring-brand/15';
 export const Input = ({ className, ...p }: InputHTMLAttributes<HTMLInputElement>) => <input {...p} className={cx(inputCls, className)} />;
 export const Textarea = ({ className, ...p }: TextareaHTMLAttributes<HTMLTextAreaElement>) => <textarea {...p} className={cx(inputCls, 'min-h-20', className)} />;
 export const Select = ({ className, children, ...p }: React.SelectHTMLAttributes<HTMLSelectElement>) => (
@@ -161,7 +164,7 @@ export function Sheet({ open, onClose, title, children, wide }: { open: boolean;
         aria-modal
         onClick={(e) => e.stopPropagation()}
         className={cx(
-          'animate-sheet pb-safe max-h-[92vh] w-full overflow-y-auto rounded-t-3xl bg-surface p-5 shadow-2xl sm:rounded-3xl',
+          'animate-sheet pb-safe max-h-[92vh] w-full overflow-y-auto rounded-t-3xl bg-surface p-5 shadow-xl sm:rounded-2xl',
           wide ? 'sm:max-w-2xl' : 'sm:max-w-md',
         )}
       >
@@ -170,7 +173,7 @@ export function Sheet({ open, onClose, title, children, wide }: { open: boolean;
           <div className="mb-4 flex items-center justify-between gap-3">
             <h2 className="text-lg font-bold">{title}</h2>
             <button onClick={onClose} className="grid h-9 w-9 place-items-center rounded-full bg-surface-2 text-muted" aria-label={t('common.close')}>
-              ✕
+              <X className="h-5 w-5" />
             </button>
           </div>
         )}
@@ -187,12 +190,9 @@ export function ProgressBar({ percent, className, tone = 'sun' }: { percent: num
     return () => cancelAnimationFrame(t);
   }, [percent]);
   return (
-    <div className={cx('h-3 overflow-hidden rounded-full bg-black/10 dark:bg-white/10', className)} role="progressbar" aria-valuenow={Math.round(percent)} aria-valuemin={0} aria-valuemax={100}>
+    <div className={cx('h-2 overflow-hidden rounded-full bg-black/[0.07] dark:bg-white/10', className)} role="progressbar" aria-valuenow={Math.round(percent)} aria-valuemin={0} aria-valuemax={100}>
       <div
-        className={cx(
-          'h-full rounded-full transition-[width] duration-1000 ease-out',
-          tone === 'sun' ? 'bg-gradient-to-r from-amber-300 via-amber-400 to-orange-400' : 'bg-gradient-to-r from-green-400 to-emerald-500',
-        )}
+        className={cx('h-full rounded-full transition-[width] duration-1000 ease-out', tone === 'sun' ? 'bg-amber-400' : 'bg-brand')}
         style={{ width: `${w}%` }}
       />
     </div>
@@ -228,11 +228,11 @@ export function Avatar({ name, url, size = 44 }: { name: string; url?: string | 
     .slice(0, 2)
     .toUpperCase();
   if (url && !broken) {
-    return <img src={url} alt="" width={size} height={size} onError={() => setBroken(true)} className="shrink-0 rounded-full object-cover ring-2 ring-white/70" style={{ width: size, height: size }} />;
+    return <img src={url} alt="" width={size} height={size} onError={() => setBroken(true)} className="shrink-0 rounded-full object-cover" style={{ width: size, height: size }} />;
   }
   return (
     <div
-      className="grid shrink-0 place-items-center rounded-full bg-gradient-to-br from-green-400 to-emerald-600 font-bold text-white ring-2 ring-white/70"
+      className="grid shrink-0 place-items-center rounded-full bg-brand/10 font-bold text-brand"
       style={{ width: size, height: size, fontSize: size * 0.38 }}
     >
       {initials || '🙂'}
@@ -243,31 +243,45 @@ export function Avatar({ name, url, size = 44 }: { name: string; url?: string | 
 export function celebrate() {
   haptic('success');
   const colors = ['#22c55e', '#facc15', '#fb923c', '#38bdf8', '#f472b6'];
-  confetti({ particleCount: 90, spread: 75, origin: { y: 0.65 }, colors, disableForReducedMotion: true });
-  setTimeout(() => confetti({ particleCount: 50, angle: 60, spread: 60, origin: { x: 0, y: 0.7 }, colors, disableForReducedMotion: true }), 200);
-  setTimeout(() => confetti({ particleCount: 50, angle: 120, spread: 60, origin: { x: 1, y: 0.7 }, colors, disableForReducedMotion: true }), 350);
+  confetti({ particleCount: 60, spread: 70, origin: { y: 0.6 }, colors, scalar: 0.9, disableForReducedMotion: true });
 }
 
 export function SectionTitle({ children, action }: { children: ReactNode; action?: ReactNode }) {
   return (
-    <div className="mb-3 mt-6 flex items-center justify-between">
-      <h2 className="text-lg font-extrabold tracking-tight">{children}</h2>
+    <div className="mb-3 mt-7 flex items-center justify-between">
+      <h2 className="text-[17px] font-bold">{children}</h2>
       {action}
     </div>
   );
 }
 
-export const Notice = ({ tone = 'info', children, className }: { tone?: 'info' | 'warn' | 'error' | 'success'; children: ReactNode; className?: string }) => (
-  <div
-    className={cx(
-      'rounded-2xl px-4 py-3 text-sm',
-      tone === 'info' && 'bg-sky-50 text-sky-900 dark:bg-sky-500/10 dark:text-sky-200',
-      tone === 'warn' && 'bg-amber-50 text-amber-900 dark:bg-amber-500/10 dark:text-amber-200',
-      tone === 'error' && 'bg-rose-50 text-rose-900 dark:bg-rose-500/10 dark:text-rose-200',
-      tone === 'success' && 'bg-emerald-50 text-emerald-900 dark:bg-emerald-500/10 dark:text-emerald-200',
-      className,
-    )}
-  >
-    {children}
-  </div>
-);
+const NOTICE_ICON = { info: Info, warn: TriangleAlert, error: CircleAlert, success: CircleCheck } as const;
+/** A quiet message: neutral (info), or lightly tinted for warnings, errors and success — always with one small icon. */
+export const Notice = ({ tone = 'info', children, className }: { tone?: 'info' | 'warn' | 'error' | 'success'; children: ReactNode; className?: string }) => {
+  const Icon = NOTICE_ICON[tone];
+  return (
+    <div
+      role={tone === 'error' ? 'alert' : undefined}
+      className={cx(
+        'flex gap-2.5 rounded-xl px-3.5 py-3 text-sm',
+        tone === 'info' && 'bg-surface-2 text-ink',
+        tone === 'warn' && 'bg-amber-50 text-amber-950 dark:bg-amber-500/10 dark:text-amber-100',
+        tone === 'error' && 'bg-rose-50 text-rose-900 dark:bg-rose-500/10 dark:text-rose-100',
+        tone === 'success' && 'bg-brand/[0.08] text-ink',
+        className,
+      )}
+    >
+      <Icon
+        className={cx(
+          'mt-0.5 h-4 w-4 shrink-0',
+          tone === 'info' && 'text-muted',
+          tone === 'warn' && 'text-amber-600',
+          tone === 'error' && 'text-rose-600',
+          tone === 'success' && 'text-brand',
+        )}
+        strokeWidth={2}
+      />
+      <div className="min-w-0 flex-1">{children}</div>
+    </div>
+  );
+};

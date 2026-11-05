@@ -1,3 +1,4 @@
+import { Coffee, Inbox, Phone, Send } from 'lucide-react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
@@ -84,7 +85,7 @@ export function OrdersPage({ counts }: { counts?: { newCount: number; activeCoun
       ) : list.error ? (
         <ErrorState error={list.error} onRetry={() => list.refetch()} />
       ) : list.data!.orders.length === 0 ? (
-        <EmptyState emoji={quiet ? '☕' : '🗂️'} title={quiet ? t('ao.caught_up') : t('ao.none')} text={view === 'active' ? t('ao.caught_up_text') : undefined} />
+        <EmptyState emoji={quiet ? <Coffee className="h-9 w-9" strokeWidth={1.5} /> : <Inbox className="h-9 w-9" strokeWidth={1.5} />} title={quiet ? t('ao.caught_up') : t('ao.none')} text={view === 'active' ? t('ao.caught_up_text') : undefined} />
       ) : (
         <>
           {/* Desktop table */}
@@ -114,7 +115,7 @@ export function OrdersPage({ counts }: { counts?: { newCount: number; activeCoun
                       </div>
                     </td>
                     <td className="whitespace-nowrap px-3 py-3">
-                      {o.fulfillmentType === 'delivery' ? `🚚 ${t('co.delivery')}` : `🏪 ${t('co.pickup')}`}
+                      {o.fulfillmentType === 'delivery' ? t('co.delivery') : t('co.pickup')}
                       {o.deliverySpeed === 'next_day' && (
                         <div className="text-xs font-bold text-sky-700 dark:text-sky-300">
                           {t('ao.next_day')} · {dayLabel(o.deliveryDate)}
@@ -149,7 +150,7 @@ export function OrdersPage({ counts }: { counts?: { newCount: number; activeCoun
                     <Badge className={STATUS_META[o.status].tone}>{statusLabel(o.status)}</Badge>
                   </div>
                   <div className="mt-1 text-sm">
-                    {o.contactName} · {o.fulfillmentType === 'delivery' ? `🚚 ${o.city ?? ''}` : `🏪 ${t('co.pickup')}`} · {t('ao.items', { n: o.itemCount ?? 0 })}
+                    {o.contactName} · {o.fulfillmentType === 'delivery' ? (o.city ?? t('co.delivery')) : t('co.pickup')} · {t('ao.items', { n: o.itemCount ?? 0 })}
                   </div>
                   {o.deliverySpeed === 'next_day' && (
                     <div className="mt-1 text-xs font-bold text-sky-700 dark:text-sky-300">
@@ -157,7 +158,7 @@ export function OrdersPage({ counts }: { counts?: { newCount: number; activeCoun
                     </div>
                   )}
                   <div className="mt-1 flex items-center justify-between">
-                    <span className="font-extrabold">{money(o.totalCents)}</span>
+                    <span className="font-bold">{money(o.totalCents)}</span>
                     <Badge className={PAYMENT_TONE[o.paymentStatus]}>
                       {t('ao.cash')} · {t(`pay.${o.paymentStatus}` as TKey)}
                     </Badge>
@@ -231,7 +232,7 @@ export function OrderDetailPage() {
   const forward = o.allowedNext.filter((s) => s !== 'cancelled');
   const canCancel = o.allowedNext.includes('cancelled');
   const pickedCount = o.items.filter((i) => picked[i.id]).length;
-  const type = o.fulfillmentType === 'delivery' ? `🚚 ${t('co.delivery')}` : `🏪 ${t('co.pickup')}`;
+  const type = o.fulfillmentType === 'delivery' ? t('co.delivery') : t('co.pickup');
 
   return (
     <div>
@@ -241,7 +242,7 @@ export function OrderDetailPage() {
       <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
         <div>
           <div className="flex flex-wrap items-center gap-2">
-            <h1 className="text-2xl font-extrabold">{t('ao.order_title', { code: o.code })}</h1>
+            <h1 className="text-2xl font-bold">{t('ao.order_title', { code: o.code })}</h1>
             <Badge className={STATUS_META[o.status].tone}>{statusLabel(o.status)}</Badge>
             <Badge className={PAYMENT_TONE[o.paymentStatus]}>{t(`pay.${o.paymentStatus}` as TKey)}</Badge>
           </div>
@@ -293,7 +294,7 @@ export function OrderDetailPage() {
                     </div>
                     <div className="text-xs text-muted">{i.unit}</div>
                   </div>
-                  <div className="text-lg font-black">×{i.quantity}</div>
+                  <div className="text-lg font-bold">×{i.quantity}</div>
                   <div className="w-20 text-right text-sm">{i.isGift ? t('ao.free') : money(i.lineTotalCents)}</div>
                 </label>
               ))}
@@ -315,7 +316,7 @@ export function OrderDetailPage() {
                   <span>−{money(o.discountCents)}</span>
                 </div>
               )}
-              <div className="flex justify-between text-base font-extrabold">
+              <div className="flex justify-between text-base font-bold">
                 <span>{o.paymentStatus === 'unpaid' ? t('ao.total_collect') : t('ao.total')}</span>
                 <span>{money(o.totalCents)}</span>
               </div>
@@ -362,16 +363,16 @@ export function OrderDetailPage() {
               </div>
             </div>
             <div className="mt-3 space-y-1.5 text-sm">
-              <div>
-                📞{' '}
+              <div className="flex items-center gap-1.5">
+                <Phone className="h-4 w-4 text-muted" />
                 <a className="font-semibold text-brand" href={`tel:${o.contactPhone}`}>
                   {o.contactPhone}
                 </a>{' '}
                 <span className="text-muted">({o.contactName})</span>
               </div>
               {o.customer.username && (
-                <div>
-                  ✈️{' '}
+                <div className="flex items-center gap-1.5">
+                  <Send className="h-4 w-4 text-muted" />
                   <a className="font-semibold text-brand" href={`https://t.me/${o.customer.username}`} target="_blank" rel="noreferrer">
                     @{o.customer.username}
                   </a>

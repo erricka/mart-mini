@@ -10,10 +10,11 @@
  * Everything entered is kept (session draft) when going back to the basket or retrying.
  */
 import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { Banknote, Building2, CalendarDays, Check, ChevronDown, Clock, Gift, House, MapPin, Plus, Star, Store, Ticket, Truck, type LucideIcon } from 'lucide-react';
 import { lazy, Suspense, useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react';
 import { Link, Navigate, useNavigate } from 'react-router-dom';
 import { metresBetween } from '../../components/maps/shared';
-import { Button, Card, cx, Field, Input, Notice, Skeleton, Spinner, Textarea } from '../../components/ui';
+import { Button, cx, Field, Input, Notice, Skeleton, Spinner, Textarea } from '../../components/ui';
 import { api, ApiError, errorMessage } from '../../lib/api';
 import { useCart } from '../../lib/cart';
 import { useCheckoutDraft, EMPTY_ADDRESS, type Discount } from '../../lib/checkoutDraft';
@@ -61,6 +62,7 @@ export function Checkout() {
   const d = useCheckoutDraft();
   const set = d.set;
   const [codeInput, setCodeInput] = useState('');
+  const [offersOpen, setOffersOpen] = useState(false);
   const [attempted, setAttempted] = useState(false);
   const [serverErrors, setServerErrors] = useState<Partial<Record<FieldKey, string>>>({});
   // Set synchronously on success so clearing the cart doesn't trigger the empty-cart redirect.
@@ -318,39 +320,39 @@ export function Checkout() {
   const totalKnown = quoteReady && !q!.totalPending && deliveryOk;
 
   return (
-    <div className="space-y-5">
-      <h1 className="text-2xl font-extrabold tracking-tight">{t('co.title')}</h1>
+    <div className="space-y-3">
+      <h1 className="pb-1 text-[22px] font-bold">{t('co.title')}</h1>
 
       {/* 1. Review the basket */}
-      <section>
+      <section className={BLOCK}>
         <div className="mb-2 flex items-center justify-between">
-          <h2 className="font-bold">{t('co.your_items', { n: count })}</h2>
+          <h2 className={H2}>{t('co.your_items', { n: count })}</h2>
           <Link to="/cart" className="text-sm font-semibold text-brand">
             {t('co.edit_basket')}
           </Link>
         </div>
-        <Card className="space-y-1 text-sm">
+        <div className="space-y-1.5 text-sm">
           {lines.slice(0, 3).map((l) => (
             <div key={l.productId} className="flex justify-between gap-3">
               <span className="min-w-0 truncate">
-                {l.emoji} {l.name} <span className="text-muted">× {l.quantity}</span>
+                <span className="text-muted">{l.quantity}×</span> {l.name}
               </span>
-              <span className="shrink-0 font-semibold">{money(l.priceCents * l.quantity)}</span>
+              <span className="shrink-0">{money(l.priceCents * l.quantity)}</span>
             </div>
           ))}
           {lines.length > 3 && <div className="text-muted">{t('co.and_more', { n: lines.length - 3 })}</div>}
-        </Card>
+        </div>
       </section>
 
       {/* 2. Delivery or pickup */}
-      <section>
-        <h2 className="mb-2 font-bold">{t('co.how')}</h2>
-        <div className="grid grid-cols-2 gap-3">
+      <section className={BLOCK}>
+        <h2 className={cx(H2, 'mb-3')}>{t('co.how')}</h2>
+        <div className="grid grid-cols-2 gap-2.5">
           <OptionCard
             active={delivery}
             disabled={!s?.deliveryEnabled}
             onClick={() => set({ fulfillment: 'delivery' })}
-            icon="🚚"
+            icon={Truck}
             title={t('co.delivery')}
             text={!s?.deliveryEnabled ? t('co.unavailable_today') : t('co.fee_from_address')}
           />
@@ -358,24 +360,34 @@ export function Checkout() {
             active={!delivery}
             disabled={!s?.pickupEnabled}
             onClick={() => set({ fulfillment: 'pickup' })}
-            icon="🏪"
+            icon={Store}
             title={t('co.pickup')}
             text={s?.pickupEnabled ? t('co.pickup_free') : t('co.unavailable')}
           />
         </div>
         {!delivery && s && (
-          <Card className="mt-3 text-sm">
-            {s.pickupAddress && <div className="font-semibold">📍 {s.pickupAddress}</div>}
-            {s.pickupHours && <div className="text-muted">🕒 {s.pickupHours}</div>}
-            <div className="mt-1 text-muted">{t('co.pickup_msg')}</div>
-          </Card>
+          <div className="mt-3 space-y-1.5 text-sm">
+            {s.pickupAddress && (
+              <div className="flex items-start gap-2 font-semibold">
+                <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-muted" />
+                {s.pickupAddress}
+              </div>
+            )}
+            {s.pickupHours && (
+              <div className="flex items-start gap-2 text-muted">
+                <Clock className="mt-0.5 h-4 w-4 shrink-0" />
+                {s.pickupHours}
+              </div>
+            )}
+            <div className="text-muted">{t('co.pickup_msg')}</div>
+          </div>
         )}
       </section>
 
       {/* 3. Delivery details: saved address / map pin / new address — messages next to each field */}
       {delivery && (
-        <section ref={deliveryRef} className="scroll-mt-4 space-y-2">
-          <h2 className="font-bold">{t('co.address')}</h2>
+        <section ref={deliveryRef} className={cx(BLOCK, 'scroll-mt-4 space-y-2.5')}>
+          <h2 className={H2}>{t('co.address')}</h2>
           {addresses.isLoading ? (
             <Skeleton className="h-20" />
           ) : (
@@ -385,18 +397,19 @@ export function Checkout() {
                   <button
                     key={a.id}
                     onClick={() => chooseSaved(a)}
-                    className={cx('flex w-full items-start gap-3 rounded-2xl bg-surface p-3.5 text-left ring-2 transition', d.addressId === a.id ? 'ring-brand' : 'ring-line/60')}
+                    className={cx('flex w-full items-start gap-3 rounded-xl p-3 text-left ring-1 transition', d.addressId === a.id ? 'bg-brand/5 ring-brand' : 'ring-line')}
                   >
-                    <span className="text-xl">{a.label === 'Work' ? '🏢' : '🏠'}</span>
+                    {a.label === 'Work' ? <Building2 className="mt-0.5 h-5 w-5 shrink-0 text-muted" /> : <House className="mt-0.5 h-5 w-5 shrink-0 text-muted" />}
                     <span className="min-w-0 flex-1">
                       <span className="block font-semibold">{labelOf(a.label)}</span>
                       <span className="block text-sm text-muted">{[a.line1, a.line2, a.city].filter(Boolean).join(', ')}</span>
                     </span>
-                    {d.addressId === a.id && <span className="text-brand">●</span>}
+                    <Radio on={d.addressId === a.id} />
                   </button>
                 ))}
               {!d.addingAddress && (
-                <button className="w-full rounded-2xl border-2 border-dashed border-line p-3 text-sm font-semibold text-muted" onClick={() => startNewAddress()}>
+                <button className="flex w-full items-center gap-2 rounded-xl px-1 py-2 text-sm font-semibold text-brand" onClick={() => startNewAddress()}>
+                  <Plus className="h-4 w-4" />
                   {t('co.add_address')}
                 </button>
               )}
@@ -404,7 +417,7 @@ export function Checkout() {
               {showMap && (
                 <div className="pt-2">
                   <div className="mb-2 text-sm font-semibold">{t('co.pin_title')}</div>
-                  <Suspense fallback={<Skeleton className="h-[260px] rounded-3xl" />}>
+                  <Suspense fallback={<Skeleton className="h-[260px] rounded-xl" />}>
                     <MapPicker value={d.pin} onChange={onPinChange} store={s?.store} hint={t('co.pin_hint')} onAddress={d.addingAddress ? onMapAddress : undefined} />
                   </Suspense>
                 </div>
@@ -422,7 +435,7 @@ export function Checkout() {
               />
 
               {d.addingAddress && (
-                <Card className="space-y-3">
+                <div className="space-y-3 border-t border-line pt-3">
                   {d.movedToNew && <Notice tone="info">{t('co.new_from_map')}</Notice>}
                   <div className="font-bold">{t('co.new_address')}</div>
                   {d.filledFromMap && <p className="text-xs font-semibold text-brand">{t('co.address_filled')}</p>}
@@ -463,7 +476,7 @@ export function Checkout() {
                       {t('co.use_saved')}
                     </button>
                   )}
-                </Card>
+                </div>
               )}
             </>
           )}
@@ -472,13 +485,13 @@ export function Checkout() {
 
       {/* 3b. Today or tomorrow */}
       {delivery && s?.nextDayEnabled && feeState !== 'unsupported' && (
-        <section>
-          <h2 className="mb-2 font-bold">{t('co.when')}</h2>
-          <div className="grid grid-cols-2 gap-3">
+        <section className={BLOCK}>
+          <h2 className={cx(H2, 'mb-3')}>{t('co.when')}</h2>
+          <div className="grid grid-cols-2 gap-2.5">
             <OptionCard
               active={d.speed === 'same_day'}
               onClick={() => set({ speed: 'same_day' })}
-              icon=""
+              icon={Clock}
               title={t('co.today')}
               text={speedPrice(feeState, dq?.freeDelivery, dq?.sameDayFeeCents, t)}
               sub={byDistance ? t('co.today_text') : undefined}
@@ -486,7 +499,7 @@ export function Checkout() {
             <OptionCard
               active={d.speed === 'next_day'}
               onClick={() => set({ speed: 'next_day' })}
-              icon=""
+              icon={CalendarDays}
               title={t('co.tomorrow')}
               text={speedPrice(feeState, dq?.freeDelivery, dq?.nextDayFeeCents ?? (feeState === 'ok' ? null : undefined), t)}
               sub={t('co.tomorrow_text', { date: dayLabel(q?.nextDayDate) })}
@@ -496,9 +509,9 @@ export function Checkout() {
       )}
 
       {/* 4. Contact */}
-      <section ref={contactRef} className="scroll-mt-4">
-        <h2 className="mb-2 font-bold">{t('co.contact')}</h2>
-        <Card className="space-y-3">
+      <section ref={contactRef} className={cx(BLOCK, 'scroll-mt-4')}>
+        <h2 className={cx(H2, 'mb-3')}>{t('co.contact')}</h2>
+        <div className="space-y-3">
           <Field label={t('co.name')} error={errorFor('name')}>
             <Input
               value={d.contactName}
@@ -535,19 +548,27 @@ export function Checkout() {
               {t('ob.share_phone')}
             </Button>
           )}
-        </Card>
+        </div>
       </section>
 
       {/* 5. Rewards & coupons */}
-      <section>
-        <h2 className="mb-2 font-bold">{t('co.rewards')}</h2>
-        <div className="space-y-2">
+      <section className={BLOCK}>
+        <button className="flex w-full items-center gap-3 text-left" onClick={() => setOffersOpen((v) => !v)} aria-expanded={offersOpen || !!d.discount}>
+          <Ticket className="h-5 w-5 shrink-0 text-muted" />
+          <span className={cx(H2, 'flex-1')}>{t('co.rewards')}</span>
+          <span className={cx('text-sm', d.discount && q?.discount ? 'font-semibold text-brand' : 'text-muted')}>
+            {d.discount && q?.discount ? q.discount.label : wallet.length + publicCoupons.length > 0 ? t('co.offers_available', { n: wallet.length + publicCoupons.length }) : ''}
+          </span>
+          <ChevronDown className={cx('h-5 w-5 shrink-0 text-muted transition', (offersOpen || !!d.discount) && 'rotate-180')} />
+        </button>
+        {(offersOpen || !!d.discount) && (
+        <div className="mt-3 space-y-2">
           {wallet.map((w) => (
             <DiscountOption
               key={w.id}
               active={d.discount?.kind === 'reward' && d.discount.id === w.id}
               onClick={() => setDiscount(d.discount?.kind === 'reward' && d.discount.id === w.id ? null : { kind: 'reward', id: w.id })}
-              emoji={w.emoji}
+              icon={Gift}
               title={w.title}
               text={w.coupon.benefit + (w.coupon.minSubtotalCents ? t('co.min', { amount: money(w.coupon.minSubtotalCents) }) : '')}
               tag={t('co.your_reward')}
@@ -559,7 +580,7 @@ export function Checkout() {
               key={c.id}
               active={d.discount?.kind === 'code' && d.discount.code === c.code}
               onClick={() => setDiscount(d.discount?.kind === 'code' && d.discount.code === c.code ? null : { kind: 'code', code: c.code! })}
-              emoji="🏷️"
+              icon={Ticket}
               title={c.title}
               text={t('co.code', { code: c.code ?? '' }) + (c.minSubtotalCents ? t('co.min', { amount: money(c.minSubtotalCents) }) : '')}
               tag={t('co.for_everyone')}
@@ -573,33 +594,36 @@ export function Checkout() {
             </Button>
           </div>
           {d.discount && q?.couponError && <Notice tone="warn">{q.couponError}</Notice>}
-          {d.discount && q?.discount && <Notice tone="success">{t('co.applied_msg', { label: q.discount.label })}</Notice>}
           <p className="text-xs text-muted">{t('co.one_per_order')}</p>
         </div>
+        )}
       </section>
 
       {/* 6. Payment — cash on delivery / at pickup */}
-      <section>
-        <h2 className="mb-2 font-bold">{t('co.payment')}</h2>
-        <div className="flex items-center gap-3 rounded-2xl bg-surface p-3.5 ring-2 ring-brand">
-          <span className="grid h-11 w-11 place-items-center rounded-xl bg-surface-2 text-2xl">💵</span>
+      <section className={BLOCK}>
+        <h2 className={cx(H2, 'mb-3')}>{t('co.payment')}</h2>
+        <div className="flex items-center gap-3">
+          <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-brand/10 text-brand">
+            <Banknote className="h-5 w-5" />
+          </span>
           <span className="min-w-0 flex-1">
-            <span className="block font-bold">{delivery ? t('co.cash_delivery') : t('co.cash_pickup')}</span>
+            <span className="block font-semibold">{delivery ? t('co.cash_delivery') : t('co.cash_pickup')}</span>
             <span className="block text-sm text-muted">{delivery ? t('co.cash_delivery_text') : t('co.cash_pickup_text')}</span>
           </span>
+          <Check className="h-5 w-5 shrink-0 text-brand" />
         </div>
       </section>
 
-      <section>
+      <section className={BLOCK}>
         <Field label={t('co.note')}>
           <Textarea value={d.note} onChange={(e) => set({ note: e.target.value })} placeholder={t('co.note_ph')} maxLength={500} />
         </Field>
       </section>
 
       {/* 7. Final total: Subtotal / Delivery fee / Total */}
-      <section ref={summaryRef} className="scroll-mt-4">
-        <h2 className="mb-2 font-bold">{t('co.summary')}</h2>
-        <Card className="space-y-2">
+      <section ref={summaryRef} className={cx(BLOCK, 'scroll-mt-4')}>
+        <h2 className={cx(H2, 'mb-3')}>{t('co.summary')}</h2>
+        <div className="space-y-2">
           {!q ? (
             quoteFailed ? (
               <RetryNotice text={t('co.fee_failed')} onRetry={() => void quoteQ.refetch()} retry={t('common.try_again')} />
@@ -619,19 +643,22 @@ export function Checkout() {
                 <Row label={d.speed === 'next_day' && s?.nextDayEnabled ? t('co.delivery_fee_tomorrow') : t('co.delivery_fee')} value={feeValue()} />
               )}
               {delivery && <FreeDeliveryHint feeState={feeState} info={dq} t={t} />}
-              <div className="flex items-baseline justify-between border-t border-line pt-2">
+              <div className="flex items-baseline justify-between border-t border-line pt-2.5">
                 <span className="font-bold">{totalKnown || !delivery ? t('co.total') : t('co.total_pending')}</span>
-                <span className="text-2xl font-black">
+                <span className="text-xl font-bold">
                   {recalculating ? <Spinner className="h-5 w-5 text-muted" /> : totalKnown ? money(q.totalCents) : '—'}
                 </span>
               </div>
               {totalKnown && q.discountCents > 0 && <p className="text-sm font-semibold text-brand">{t('co.you_save', { amount: money(q.discountCents) })}</p>}
               {q.pointsEstimate > 0 && (
-                <p className="text-sm font-semibold text-amber-600">{t(delivery ? 'co.points_delivered' : 'co.points_collected', { n: q.pointsEstimate })}</p>
+                <p className="flex items-center gap-1 text-xs text-muted">
+                  <Star className="h-3.5 w-3.5 fill-amber-400 text-amber-400" />
+                  {t(delivery ? 'co.points_delivered' : 'co.points_collected', { n: q.pointsEstimate })}
+                </p>
               )}
             </>
           )}
-        </Card>
+        </div>
         {quoteFailed && q && <RetryNotice text={t('co.fee_failed')} onRetry={() => void quoteQ.refetch()} retry={t('common.try_again')} className="mt-3" />}
         {q && !recalculating && q.issues.filter((i) => i !== dq?.message).length > 0 && (
           <Notice tone="error" className="mt-3">
@@ -653,7 +680,7 @@ export function Checkout() {
       </section>
 
       {/* One primary action, never active with a pending or stale fee. */}
-      <div className="pb-safe fixed inset-x-0 bottom-0 z-40 border-t border-line bg-surface/95 backdrop-blur">
+      <div className="pb-safe fixed inset-x-0 bottom-0 z-40 border-t border-line bg-surface">
         <div className="mx-auto max-w-xl px-4 py-3">
           <Button block size="lg" disabled={feeState === 'loading' || place.isPending} loading={place.isPending} onClick={onPrimary} variant={canPlace || feeState === 'error' ? 'primary' : 'secondary'}>
             {primaryLabel}
@@ -775,11 +802,12 @@ function OptionCard({
   active: boolean;
   disabled?: boolean;
   onClick: () => void;
-  icon: string;
+  icon: LucideIcon;
   title: string;
   text: string;
   sub?: string;
 }) {
+  const Icon = icon;
   return (
     <button
       disabled={disabled}
@@ -787,31 +815,44 @@ function OptionCard({
         haptic('select');
         onClick();
       }}
-      className={cx('flex flex-col items-start rounded-3xl bg-surface p-4 text-left ring-2 transition disabled:opacity-40', active ? 'ring-brand' : 'ring-line/60')}
+      className={cx('relative flex flex-col items-start rounded-xl p-3 text-left ring-1 transition disabled:opacity-40', active ? 'bg-brand/5 ring-2 ring-brand' : 'ring-line')}
     >
-      {icon && <span className="mb-2 text-3xl">{icon}</span>}
-      <span className="font-bold">{title}</span>
-      <span className="text-sm font-semibold text-muted">{text}</span>
+      <Icon className={cx('mb-2 h-6 w-6', active ? 'text-brand' : 'text-muted')} strokeWidth={1.75} />
+      {active && <Check className="absolute right-3 top-3 h-4 w-4 text-brand" strokeWidth={2.5} />}
+      <span className="font-semibold">{title}</span>
+      <span className="text-sm text-muted">{text}</span>
       {sub && <span className="mt-0.5 text-xs text-muted">{sub}</span>}
     </button>
   );
 }
 
-function DiscountOption({ active, onClick, emoji, title, text, tag, appliedLabel }: { active: boolean; onClick: () => void; emoji: string; title: string; text: string; tag: string; appliedLabel: string }) {
+function DiscountOption({ active, onClick, icon: Icon, title, text, tag, appliedLabel }: { active: boolean; onClick: () => void; icon: LucideIcon; title: string; text: string; tag: string; appliedLabel: string }) {
   return (
     <button
       onClick={() => {
         haptic('select');
         onClick();
       }}
-      className={cx('flex w-full items-center gap-3 rounded-2xl p-3.5 text-left ring-2 transition', active ? 'bg-amber-50 ring-amber-400 dark:bg-amber-500/10' : 'bg-surface ring-line/60')}
+      className={cx('flex w-full items-center gap-3 rounded-xl p-3 text-left ring-1 transition', active ? 'bg-brand/5 ring-2 ring-brand' : 'ring-line')}
     >
-      <span className="text-2xl">{emoji}</span>
+      <Icon className={cx('h-5 w-5 shrink-0', active ? 'text-brand' : 'text-muted')} strokeWidth={1.75} />
       <span className="min-w-0 flex-1">
-        <span className="block font-semibold">{title}</span>
+        <span className="block text-sm font-semibold">{title}</span>
         <span className="block text-xs text-muted">{text}</span>
       </span>
-      <span className="shrink-0 text-xs font-bold text-muted">{active ? appliedLabel : tag}</span>
+      <span className={cx('shrink-0 text-xs font-semibold', active ? 'text-brand' : 'text-muted')}>{active ? appliedLabel : tag}</span>
     </button>
+  );
+}
+
+/** Checkout sections: plain white blocks with a small heading. */
+const BLOCK = 'rounded-2xl bg-surface p-4';
+const H2 = 'text-base font-bold';
+
+function Radio({ on }: { on: boolean }) {
+  return (
+    <span className={cx('mt-0.5 grid h-5 w-5 shrink-0 place-items-center rounded-full ring-2', on ? 'bg-brand ring-brand' : 'ring-line')}>
+      {on && <Check className="h-3 w-3 text-white" strokeWidth={3} />}
+    </span>
   );
 }

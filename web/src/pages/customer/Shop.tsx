@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { Search, SearchX, X } from 'lucide-react';
 import { useSearchParams } from 'react-router-dom';
 import { ProductCard, ProductGridSkeleton } from '../../components/ProductCard';
 import { Button, cx, EmptyState, ErrorState } from '../../components/ui';
@@ -36,9 +37,9 @@ export function Shop() {
   return (
     <div>
       <div className="sticky top-0 z-20 -mx-4 bg-bg/95 px-4 pb-3 pt-1 backdrop-blur">
-        <h1 className="mb-3 text-2xl font-extrabold tracking-tight">{current ? `${current.emoji} ${current.name}` : promo ? t('shop.deals') : t('shop.title')}</h1>
+        <h1 className="mb-3 text-[22px] font-bold">{current ? current.name : promo ? t('shop.deals') : t('shop.title')}</h1>
         <div className="relative">
-          <span className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2">🔍</span>
+          <Search className="pointer-events-none absolute left-3.5 top-1/2 h-5 w-5 -translate-y-1/2 text-muted" />
           <input
             ref={inputRef}
             value={q}
@@ -46,21 +47,21 @@ export function Shop() {
             type="search"
             enterKeyHint="search"
             placeholder={t('shop.search')}
-            className="w-full rounded-2xl border border-line bg-surface py-3.5 pl-11 pr-10 outline-none focus:border-brand focus:ring-4 focus:ring-brand/15"
+            className="w-full rounded-xl bg-surface py-3 pl-11 pr-10 outline-none ring-1 ring-line focus:ring-2 focus:ring-brand/40"
           />
           {q && (
-            <button onClick={() => setQ('')} className="absolute right-3 top-1/2 grid h-7 w-7 -translate-y-1/2 place-items-center rounded-full bg-surface-2 text-sm" aria-label={t('shop.clear')}>
-              ✕
+            <button onClick={() => setQ('')} className="absolute right-3 top-1/2 grid h-7 w-7 -translate-y-1/2 place-items-center rounded-full bg-surface-2 text-muted" aria-label={t('shop.clear')}>
+              <X className="h-4 w-4" />
             </button>
           )}
         </div>
-        <div className="mt-3 text-xs font-bold uppercase tracking-wide text-muted">{t('shop.categories')}</div>
+        <div className="mt-3 text-xs font-medium text-muted">{t('shop.categories')}</div>
         <div className="no-scrollbar -mx-4 mt-1.5 flex gap-2 overflow-x-auto px-4">
           <Chip active={!categoryId && !promo} onClick={() => select()}>{t('shop.all')}</Chip>
           <Chip active={promo} onClick={() => select(undefined, true)}>{t('shop.deals')}</Chip>
           {cats.data?.map((c) => (
             <Chip key={c.id} active={c.id === categoryId} onClick={() => select(c.id)}>
-              {c.emoji} {c.name}
+              {c.name}
             </Chip>
           ))}
         </div>
@@ -72,7 +73,7 @@ export function Shop() {
         <ErrorState error={products.error} onRetry={() => products.refetch()} />
       ) : products.data!.length === 0 ? (
         <EmptyState
-          emoji="🔎"
+          emoji={<SearchX className="h-9 w-9" strokeWidth={1.5} />}
           title={debounced ? t('shop.no_results', { q: debounced }) : t('shop.nothing')}
           text={debounced ? t('shop.try_another') : t('shop.restock')}
           action={<Button variant="secondary" onClick={() => { setQ(''); select(); }}>{t('shop.browse_all')}</Button>}
@@ -92,7 +93,7 @@ function Chip({ active, onClick, children }: { active: boolean; onClick: () => v
   return (
     <button
       onClick={onClick}
-      className={cx('shrink-0 whitespace-nowrap rounded-full px-4 py-2 text-sm font-semibold transition', active ? 'bg-ink text-bg' : 'bg-surface text-ink ring-1 ring-line')}
+      className={cx('shrink-0 whitespace-nowrap rounded-full px-3.5 py-1.5 text-sm font-medium transition', active ? 'bg-brand text-brand-ink' : 'bg-surface text-ink ring-1 ring-line')}
     >
       {children}
     </button>

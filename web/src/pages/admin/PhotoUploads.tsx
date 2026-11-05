@@ -1,3 +1,4 @@
+import { Images } from 'lucide-react';
 /**
  * "📷 Upload photos": pick many photos at once. Each file is matched to a product by its file name —
  * the product's barcode/code (8934868197911.jpg) or its exact name (សាប៊ូទឹក Downy.jpg). A preview
@@ -107,7 +108,7 @@ export function PhotoUploads({ open, onClose }: { open: boolean; onClose: () => 
           <li>{t('ph.step1')}</li>
           <li className="text-muted">{t('ph.step2')}</li>
         </ol>
-        <label className="flex cursor-pointer flex-col items-center justify-center gap-2 rounded-3xl border-2 border-dashed border-line p-6 text-center hover:border-brand/60">
+        <label className="flex cursor-pointer flex-col items-center justify-center gap-2 rounded-2xl border border-dashed border-line bg-surface-2/60 p-8 text-center hover:border-brand/60">
           <input
             ref={input}
             type="file"
@@ -121,7 +122,9 @@ export function PhotoUploads({ open, onClose }: { open: boolean; onClose: () => 
               void match(fs, replace);
             }}
           />
-          <span className="text-4xl">🖼️</span>
+          <span className="grid h-12 w-12 place-items-center rounded-full bg-brand/10 text-brand">
+            <Images className="h-6 w-6" strokeWidth={1.75} />
+          </span>
           <span className="font-bold text-brand">{files.length ? t('ph.chosen', { n: files.length }) : t('ph.choose')}</span>
         </label>
 

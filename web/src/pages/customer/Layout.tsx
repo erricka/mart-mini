@@ -1,3 +1,4 @@
+import { ChevronRight, Gift, House, LayoutGrid, ReceiptText, ShoppingBasket, type LucideIcon } from 'lucide-react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { cartCount, cartSubtotal, useCart } from '../../lib/cart';
 import { money } from '../../lib/format';
@@ -8,12 +9,12 @@ import { cx } from '../../components/ui';
 
 // Shopping first: Shop and the Basket (with its item count) are always one tap away.
 // Profile opens from the avatar on Home (and links to Rewards history too).
-const TABS: { to: string; label: TKey; icon: string; end?: boolean }[] = [
-  { to: '/', label: 'nav.home', icon: '🏠', end: true },
-  { to: '/shop', label: 'nav.shop', icon: '🛍️' },
-  { to: '/cart', label: 'nav.cart', icon: '🧺' },
-  { to: '/rewards', label: 'nav.rewards', icon: '🎁' },
-  { to: '/orders', label: 'nav.orders', icon: '📦' },
+const TABS: { to: string; label: TKey; icon: LucideIcon; end?: boolean }[] = [
+  { to: '/', label: 'nav.home', icon: House, end: true },
+  { to: '/shop', label: 'nav.shop', icon: LayoutGrid },
+  { to: '/cart', label: 'nav.cart', icon: ShoppingBasket },
+  { to: '/rewards', label: 'nav.rewards', icon: Gift },
+  { to: '/orders', label: 'nav.orders', icon: ReceiptText },
 ];
 const TAB_PATHS = new Set(TABS.map((t) => t.to));
 const HIDE_CART_BAR = ['/cart', '/checkout'];
@@ -50,20 +51,23 @@ export function CustomerLayout() {
       {showCartBar && (
         <button
           onClick={() => navigate('/cart')}
-          className="animate-rise fixed inset-x-4 bottom-[84px] z-30 mx-auto flex max-w-[calc(36rem-2rem)] items-center justify-between rounded-2xl bg-brand px-4 py-3.5 font-bold text-brand-ink shadow-xl shadow-green-900/20"
+          className="animate-rise fixed inset-x-4 bottom-[76px] z-30 mx-auto flex max-w-[calc(36rem-2rem)] items-center justify-between rounded-xl bg-brand px-4 py-3 font-semibold text-brand-ink shadow-lg shadow-black/10"
         >
-          <span className="flex items-center gap-2">
-            <span key={bump} className="animate-pop grid h-8 min-w-8 place-items-center rounded-full bg-white/25 px-2 text-sm">
+          <span className="flex items-center gap-2.5">
+            <span key={bump} className="animate-pop grid h-7 min-w-7 place-items-center rounded-full bg-white/20 px-1.5 text-sm font-bold">
               {count}
             </span>
             {t('layout.view_basket')}
           </span>
-          <span>{money(cartSubtotal(lines))} →</span>
+          <span className="flex items-center gap-1 font-bold">
+            {money(cartSubtotal(lines))}
+            <ChevronRight className="h-5 w-5" />
+          </span>
         </button>
       )}
 
       {!isFlow && (
-        <nav className="pb-safe fixed inset-x-0 bottom-0 z-40 border-t border-line bg-surface/95 backdrop-blur" aria-label="Main">
+        <nav className="pb-safe fixed inset-x-0 bottom-0 z-40 border-t border-line bg-surface" aria-label="Main">
           <div className="mx-auto grid max-w-xl grid-cols-5">
             {TABS.map((tab) => (
               <NavLink
@@ -71,27 +75,27 @@ export function CustomerLayout() {
                 to={tab.to}
                 end={tab.end}
                 className={({ isActive }) =>
-                  cx('relative flex flex-col items-center gap-0.5 py-2.5 text-[11px] font-semibold transition', isActive ? 'text-brand' : 'text-muted')
+                  cx('relative flex flex-col items-center gap-1 pb-2 pt-2.5 text-[11px] font-medium transition', isActive ? 'text-brand' : 'text-muted')
                 }
               >
                 {({ isActive }) => (
                   <>
-                    <span className={cx('text-[22px] leading-none transition', isActive ? 'scale-110' : 'grayscale-[.6] opacity-80')}>{tab.icon}</span>
+                    <tab.icon className="h-[22px] w-[22px]" strokeWidth={isActive ? 2.2 : 1.7} aria-hidden />
                     <span className="max-w-full truncate px-0.5">{t(tab.label)}</span>
                     {tab.to === '/cart' && count > 0 && (
                       <span
                         key={bump}
-                        className="animate-pop absolute left-1/2 top-1 ml-2 grid h-5 min-w-5 place-items-center rounded-full bg-brand px-1 text-[11px] font-bold leading-none text-brand-ink ring-2 ring-surface"
+                        className="animate-pop absolute left-1/2 top-1 ml-1.5 grid h-[18px] min-w-[18px] place-items-center rounded-full bg-rose-500 px-1 text-[10px] font-bold leading-none text-white ring-2 ring-surface"
                         aria-label={`${count}`}
                       >
                         {count > 99 ? '99+' : count}
                       </span>
                     )}
                     {tab.to === '/orders' && (home.data?.activeOrders ?? 0) > 0 && (
-                      <span className="absolute right-[22%] top-1.5 h-2.5 w-2.5 rounded-full bg-orange-500 ring-2 ring-surface" />
+                      <span className="absolute left-1/2 top-2 ml-2 h-2 w-2 rounded-full bg-rose-500 ring-2 ring-surface" />
                     )}
                     {tab.to === '/rewards' && (home.data?.unseen.length ?? 0) > 0 && (
-                      <span className="absolute right-[22%] top-1.5 h-2.5 w-2.5 rounded-full bg-amber-400 ring-2 ring-surface" />
+                      <span className="absolute left-1/2 top-2 ml-2 h-2 w-2 rounded-full bg-rose-500 ring-2 ring-surface" />
                     )}
                   </>
                 )}

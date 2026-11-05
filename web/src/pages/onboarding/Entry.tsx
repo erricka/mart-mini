@@ -1,3 +1,4 @@
+import { ShoppingBasket } from 'lucide-react';
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { LanguageSwitch } from '../../components/LanguageSwitch';
@@ -9,10 +10,8 @@ import { useSession } from '../../lib/session';
 
 export function BrandMark({ size = 'lg' }: { size?: 'md' | 'lg' }) {
   return (
-    <div className={`relative grid place-items-center ${size === 'lg' ? 'h-28 w-28' : 'h-16 w-16'}`}>
-      <div className="absolute inset-0 rounded-[2rem] bg-gradient-to-br from-green-400 to-emerald-600 shadow-xl shadow-green-900/20" />
-      <span className={`absolute ${size === 'lg' ? '-right-3 -top-3 text-5xl' : '-right-2 -top-2 text-3xl'} animate-float`}>⭐</span>
-      <span className={`relative ${size === 'lg' ? 'text-6xl' : 'text-4xl'}`}>🧺</span>
+    <div className={`grid place-items-center rounded-[28%] bg-brand text-brand-ink ${size === 'lg' ? 'h-20 w-20' : 'h-14 w-14'}`}>
+      <ShoppingBasket className={size === 'lg' ? 'h-10 w-10' : 'h-7 w-7'} strokeWidth={1.75} />
     </div>
   );
 }
@@ -24,7 +23,7 @@ export function Splash() {
     <div className="flex min-h-screen flex-col items-center justify-center gap-5 p-8 text-center">
       <BrandMark />
       <div>
-        <h1 className="text-2xl font-extrabold">{shop.data?.shopName ?? 'mart25'}</h1>
+        <h1 className="text-xl font-bold">{shop.data?.shopName ?? 'mart25'}</h1>
         <p className="text-sm text-muted">{t('entry.checking')}</p>
       </div>
       <Spinner className="h-6 w-6 text-brand" />
@@ -60,7 +59,7 @@ export function DevLogin() {
       <div className="flex flex-col items-center gap-4 text-center">
         <BrandMark size="md" />
         <Badge className="bg-amber-100 text-amber-900 dark:bg-amber-500/20 dark:text-amber-200">{t('entry.dev_badge')}</Badge>
-        <h1 className="text-2xl font-extrabold">{shop.data?.shopName ?? 'mart25'}</h1>
+        <h1 className="text-xl font-bold">{shop.data?.shopName ?? 'mart25'}</h1>
         <p className="text-sm text-muted">{t('entry.dev_text')}</p>
       </div>
       <div className="space-y-3">
@@ -88,7 +87,7 @@ export function OutsideTelegram() {
     <div className="mx-auto flex min-h-screen max-w-md flex-col items-center justify-center gap-4 p-8 text-center">
       <LanguageSwitch />
       <BrandMark size="md" />
-      <h1 className="text-2xl font-extrabold">{t('entry.outside_title', { shop: name })}</h1>
+      <h1 className="text-xl font-bold">{t('entry.outside_title', { shop: name })}</h1>
       <p className="text-sm text-muted">{t('entry.outside_text')}</p>
       <p className="text-xs text-muted">{t('entry.outside_staff')}</p>
     </div>

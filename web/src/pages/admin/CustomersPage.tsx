@@ -128,12 +128,12 @@ export function CustomerDetail() {
             <div className="flex items-center gap-3">
               <Avatar name={`${c.firstName} ${c.lastName ?? ''}`} url={c.photoUrl} size={56} />
               <div>
-                <h1 className="text-xl font-extrabold">{c.firstName} {c.lastName}</h1>
+                <h1 className="text-xl font-bold">{c.firstName} {c.lastName}</h1>
                 {c.username && <a href={`https://t.me/${c.username}`} target="_blank" rel="noreferrer" className="text-sm font-semibold text-brand">@{c.username}</a>}
               </div>
             </div>
             <dl className="mt-4 grid grid-cols-2 gap-3 text-sm">
-              <div><dt className="text-xs text-muted">{t('ac.points')}</dt><dd className="text-2xl font-black">{c.pointsBalance}</dd></div>
+              <div><dt className="text-xs text-muted">{t('ac.points')}</dt><dd className="text-2xl font-bold">{c.pointsBalance}</dd></div>
               <div><dt className="text-xs text-muted">{t('ac.level')}</dt><dd className="font-bold">{c.level.emoji} {c.level.name}</dd></div>
               <div><dt className="text-xs text-muted">{t('ac.completed')}</dt><dd className="font-bold">{c.completed}</dd></div>
               <div><dt className="text-xs text-muted">{t('ac.spent')}</dt><dd className="font-bold">{money(c.spentCents)}</dd></div>

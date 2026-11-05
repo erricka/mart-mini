@@ -4,9 +4,10 @@ import { useNavigate } from 'react-router-dom';
 import { api } from '../lib/api';
 import { useT } from '../lib/i18n';
 import type { WalletItem } from '../lib/types';
-import { Button, celebrate, Sheet } from './ui';
+import { haptic } from '../lib/telegram';
+import { Button, Sheet } from './ui';
 
-/** Milestone celebration: shown once for rewards the customer hasn't seen yet. */
+/** A new reward: shown once (calmly) for rewards the customer hasn't seen yet. */
 export function RewardCelebration({ unseen }: { unseen: WalletItem[] }) {
   const qc = useQueryClient();
   const navigate = useNavigate();
@@ -19,7 +20,7 @@ export function RewardCelebration({ unseen }: { unseen: WalletItem[] }) {
     if (!key || shown.current === key) return;
     shown.current = key;
     setOpen(true);
-    setTimeout(celebrate, 200);
+    haptic('success');
   }, [key]);
 
   const close = async (go?: string) => {
@@ -35,13 +36,13 @@ export function RewardCelebration({ unseen }: { unseen: WalletItem[] }) {
   return (
     <Sheet open={open} onClose={() => close()}>
       <div className="flex flex-col items-center py-2 text-center">
-        <div className="animate-wiggle text-7xl">{first.emoji}</div>
-        <div className="mt-3 text-sm font-bold uppercase tracking-wider text-amber-600">{t('cel.unlocked')}</div>
-        <h2 className="mt-1 text-2xl font-extrabold">{first.title}</h2>
+        <div className="grid h-20 w-20 place-items-center rounded-full bg-amber-50 text-5xl dark:bg-amber-500/10">{first.emoji}</div>
+        <div className="mt-4 text-sm font-semibold text-amber-600">{t('cel.unlocked')}</div>
+        <h2 className="mt-1 text-xl font-bold">{first.title}</h2>
         <p className="mt-1 text-muted">{first.coupon.description || first.coupon.benefit}</p>
         {unseen.length > 1 && <p className="mt-2 text-sm font-semibold">{t('cel.more', { n: unseen.length - 1 })}</p>}
         <div className="mt-6 grid w-full gap-2">
-          <Button block size="lg" variant="sun" onClick={() => close('/shop')}>
+          <Button block size="lg" onClick={() => close('/shop')}>
             {t('cel.use_next')}
           </Button>
           <Button block variant="ghost" onClick={() => close('/rewards')}>

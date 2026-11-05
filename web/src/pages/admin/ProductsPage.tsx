@@ -1,7 +1,8 @@
+import { Camera, FileSpreadsheet, ImageOff, Images, PackageOpen, Plus, SearchX } from 'lucide-react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRef, useState } from 'react';
 import { ProductImage } from '../../components/ProductImage';
-import { Badge, Button, Card, cx, EmptyState, ErrorState, Field, Input, Notice, Select, Sheet, Skeleton, Textarea, Toggle } from '../../components/ui';
+import { Badge, Button, Card, cx, EmptyState, ErrorState, Field, Input, Notice, Select, Sheet, Skeleton, Spinner, Textarea, Toggle } from '../../components/ui';
 import { api, errorMessage } from '../../lib/api';
 import { dateTime, fromCents, money, toCents } from '../../lib/format';
 import { shrinkImage, uploadProductPhoto } from '../../lib/image';
@@ -62,12 +63,17 @@ export function ProductsPage() {
         actions={
           <>
             <Button variant="secondary" onClick={() => setImportOpen(true)}>
+              <FileSpreadsheet className="h-[18px] w-[18px]" />
               {t('ap.import')}
             </Button>
             <Button variant="secondary" onClick={() => setPhotosOpen(true)}>
+              <Images className="h-[18px] w-[18px]" />
               {t('ph.button')}
             </Button>
-            <Button onClick={newProduct}>{t('ap.add_product')}</Button>
+            <Button onClick={newProduct}>
+              <Plus className="h-[18px] w-[18px]" />
+              {t('ap.add_product')}
+            </Button>
           </>
         }
       />
@@ -113,19 +119,22 @@ function Products({ onNew, onImport }: { onNew: () => void; onImport: () => void
           {cats.data?.map((c) => <option key={c.id} value={c.id}>{c.emoji} {c.name}</option>)}
         </Select>
         {(['all', 'low', 'out'] as const).map((s) => (
-          <button key={s} onClick={() => setStock(s)} className={cx('rounded-full px-3 py-1.5 text-sm font-semibold', stock === s ? 'bg-ink text-bg' : 'bg-surface ring-1 ring-line')}>
+          <button key={s} onClick={() => setStock(s)} className={cx('rounded-full px-3 py-1.5 text-sm font-medium', stock === s ? 'bg-brand text-brand-ink' : 'bg-surface ring-1 ring-line')}>
             {s === 'all' ? t('ap.filter_all', { n: list.data?.summary.total ?? '…' }) : s === 'low' ? t('ap.filter_low', { n: list.data?.summary.low ?? 0 }) : t('ap.filter_out', { n: list.data?.summary.out ?? 0 })}
           </button>
         ))}
-        <button onClick={() => setNoPhoto(!noPhoto)} className={cx('rounded-full px-3 py-1.5 text-sm font-semibold', noPhoto ? 'bg-ink text-bg' : 'bg-surface ring-1 ring-line')}>
+        <button onClick={() => setNoPhoto(!noPhoto)} className={cx('flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-medium', noPhoto ? 'bg-brand text-brand-ink' : 'bg-surface ring-1 ring-line')}>
+          <ImageOff className="h-4 w-4" />
           {t('ph.filter_missing', { n: list.data?.summary.noPhoto ?? 0 })}
         </button>
       </div>
 
       {list.isLoading ? <Skeleton className="h-96" /> : list.error ? <ErrorState error={list.error} onRetry={() => list.refetch()} /> : list.data!.summary.total === 0 ? (
         <Card className="flex flex-col items-center py-12 text-center">
-          <div className="text-6xl">🛒</div>
-          <h2 className="mt-3 text-xl font-extrabold">{t('ap.empty_title')}</h2>
+          <span className="grid h-16 w-16 place-items-center rounded-full bg-surface-2 text-muted">
+            <PackageOpen className="h-8 w-8" strokeWidth={1.5} />
+          </span>
+          <h2 className="mt-3 text-xl font-bold">{t('ap.empty_title')}</h2>
           <p className="mt-1 max-w-md text-sm text-muted">{t('ap.empty_text')}</p>
           <div className="mt-5 flex flex-wrap justify-center gap-2">
             <Button size="lg" onClick={onImport}>{t('ap.import')}</Button>
@@ -133,7 +142,7 @@ function Products({ onNew, onImport }: { onNew: () => void; onImport: () => void
           </div>
         </Card>
       ) : list.data!.products.length === 0 ? (
-        <EmptyState emoji="📦" title={t('ap.no_match')} />
+        <EmptyState emoji={<SearchX className="h-9 w-9" strokeWidth={1.5} />} title={t('ap.no_match')} />
       ) : (
         <Card className="overflow-x-auto p-0">
           <table className="w-full text-sm">
@@ -299,7 +308,7 @@ function StockSheet({ product, onClose }: { product: AdminProduct | null; onClos
   const result = mode === 'set' ? n : product.stock + n;
   return (
     <Sheet open onClose={onClose} title={t('ap.stock_title', { name: product.name })}>
-      <div className="mb-3 text-center"><div className="text-4xl font-black">{product.stock}</div><div className="text-sm text-muted">{t('ap.in_stock_now')}</div></div>
+      <div className="mb-3 text-center"><div className="text-4xl font-bold">{product.stock}</div><div className="text-sm text-muted">{t('ap.in_stock_now')}</div></div>
       <div className="mb-3 grid grid-cols-2 gap-2">
         <Button variant={mode === 'add' ? 'primary' : 'secondary'} onClick={() => setMode('add')}>{t('ap.mode_add')}</Button>
         <Button variant={mode === 'set' ? 'primary' : 'secondary'} onClick={() => setMode('set')}>{t('ap.mode_set')}</Button>
@@ -407,9 +416,9 @@ function QuickPhoto({ productId }: { productId: number }) {
         disabled={busy}
         title={t('ph.take')}
         aria-label={t('ph.take')}
-        className="absolute -bottom-1 -right-1 grid h-6 w-6 place-items-center rounded-full bg-brand text-xs text-brand-ink shadow ring-2 ring-surface"
+        className="absolute -bottom-1 -right-1 grid h-6 w-6 place-items-center rounded-full bg-brand text-brand-ink shadow ring-2 ring-surface"
       >
-        {busy ? '…' : '📷'}
+        {busy ? <Spinner className="h-3 w-3" /> : <Camera className="h-3.5 w-3.5" />}
       </button>
     </>
   );

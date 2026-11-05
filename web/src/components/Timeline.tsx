@@ -1,3 +1,4 @@
+import { Check, X } from 'lucide-react';
 import { dateTime } from '../lib/format';
 import { useT } from '../lib/i18n';
 import { STATUS_META } from '../lib/status';
@@ -16,12 +17,12 @@ export function Timeline({ steps }: { steps: TimelineStep[] }) {
             {!last && <span className={cx('absolute left-[17px] top-9 h-[calc(100%-28px)] w-0.5 rounded', s.done && steps[i + 1]?.done ? 'bg-brand' : 'bg-line')} />}
             <span
               className={cx(
-                'relative z-10 grid h-9 w-9 shrink-0 place-items-center rounded-full text-base',
+                'relative z-10 grid h-9 w-9 shrink-0 place-items-center rounded-full',
                 cancelled ? 'bg-rose-500 text-white' : s.done ? 'bg-brand text-brand-ink' : 'bg-surface-2 text-muted',
-                s.current && !cancelled && 'animate-pulse-ring',
+                s.current && !cancelled && 'ring-4 ring-brand/15',
               )}
             >
-              {cancelled ? '✕' : s.done && !s.current ? '✓' : STATUS_META[s.status].emoji}
+              {cancelled ? <X className="h-4 w-4" strokeWidth={2.5} /> : s.done && !s.current ? <Check className="h-4 w-4" strokeWidth={2.5} /> : <StepIcon status={s.status} />}
             </span>
             <div className="pt-1.5">
               <div className={cx('font-semibold', !s.done && 'text-muted', s.current && 'text-ink')}>{t(`status.${s.status}`)}</div>
@@ -32,4 +33,9 @@ export function Timeline({ steps }: { steps: TimelineStep[] }) {
       })}
     </ol>
   );
+}
+
+function StepIcon({ status }: { status: TimelineStep['status'] }) {
+  const Icon = STATUS_META[status].icon;
+  return <Icon className="h-[18px] w-[18px]" strokeWidth={1.9} />;
 }

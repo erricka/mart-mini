@@ -1,3 +1,4 @@
+import { Ban, Bell, ChevronRight, FolderLock, Gift, Pencil, PartyPopper, ShieldCheck, ShoppingBasket, Star, Target, Ticket, type LucideIcon } from 'lucide-react';
 /**
  * First-time customer onboarding (after scanning the store/receipt QR):
  * Language → Welcome → About you (name + optional phone) → Privacy → Celebration → Start shopping.
@@ -123,7 +124,7 @@ export function Onboarding({ token, prefill }: { token: string; prefill: Prefill
       <div className="mx-auto flex min-h-screen max-w-md flex-col px-6 pb-8 pt-16">
         <div className="flex flex-1 flex-col items-center text-center">
           <BrandMark />
-          <h1 className="mt-6 text-3xl font-extrabold tracking-tight">{shopName}</h1>
+          <h1 className="mt-6 text-2xl font-bold">{shopName}</h1>
           <p className="mt-3 text-lg font-semibold">ជ្រើសរើសភាសា</p>
           <p className="text-muted">Choose your language</p>
           <div className="mt-8 grid w-full gap-3">
@@ -135,16 +136,16 @@ export function Onboarding({ token, prefill }: { token: string; prefill: Prefill
                 key={code}
                 onClick={() => chooseLanguage(code)}
                 className={cx(
-                  'animate-rise flex items-center gap-4 rounded-3xl bg-surface p-5 text-left ring-2 transition active:scale-[0.98]',
-                  lang === code ? 'ring-brand' : 'ring-line/60',
+                  'animate-rise flex items-center gap-4 rounded-2xl bg-surface p-4 text-left ring-1 transition active:scale-[0.98]',
+                  lang === code ? 'ring-2 ring-brand' : 'ring-line',
                 )}
               >
-                <span className="text-4xl">{flag}</span>
+                <span className="text-3xl">{flag}</span>
                 <span className="flex-1">
-                  <span className="block text-xl font-extrabold">{name}</span>
+                  <span className="block text-lg font-bold">{name}</span>
                   <span className="block text-sm text-muted">{other}</span>
                 </span>
-                <span className="text-2xl text-muted">›</span>
+                <ChevronRight className="h-5 w-5 text-muted" />
               </button>
             ))}
           </div>
@@ -160,22 +161,24 @@ export function Onboarding({ token, prefill }: { token: string; prefill: Prefill
       <div className="mx-auto flex min-h-screen max-w-md flex-col px-6 pb-8 pt-12">
         <div className="flex flex-1 flex-col items-center text-center">
           <BrandMark />
-          <h1 className="animate-rise mt-6 text-3xl font-extrabold tracking-tight">{t('ob.welcome_title', { shop: shopName })}</h1>
+          <h1 className="animate-rise mt-6 text-2xl font-bold">{t('ob.welcome_title', { shop: shopName })}</h1>
           <p className="animate-rise mt-2 text-muted">{shop.data?.tagline}</p>
           <ul className="mt-8 w-full space-y-3 text-left">
-            {[
-              ['🛒', t('ob.perk1_title'), t('ob.perk1_text')],
-              ['⭐', t('ob.perk2_title'), t('ob.perk2_text', { n: teaser?.pointsPerDollar ?? 1, amount: money(100) })],
+            {([
+              [ShoppingBasket, t('ob.perk1_title'), t('ob.perk1_text')],
+              [Star, t('ob.perk2_title'), t('ob.perk2_text', { n: teaser?.pointsPerDollar ?? 1, amount: money(100) })],
               [
-                '🎁',
+                Gift,
                 teaser?.signupBonusPoints ? t('ob.perk3_bonus', { n: teaser.signupBonusPoints }) : t('ob.perk3_rewards'),
                 teaser?.welcomeCoupon ? t('ob.perk3_gift', { gift: teaser.welcomeCoupon.title }) : t('ob.perk3_more'),
               ],
-            ].map(([icon, title, text], i) => (
-              <li key={i} className="animate-rise flex gap-3 rounded-2xl bg-surface p-3.5 ring-1 ring-line/60" style={{ animationDelay: `${i * 80}ms` }}>
-                <span className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-surface-2 text-2xl">{icon}</span>
+            ] as [LucideIcon, string, string][]).map(([Icon, title, text], i) => (
+              <li key={i} className="animate-rise flex gap-3 rounded-2xl bg-surface p-3.5" style={{ animationDelay: `${i * 80}ms` }}>
+                <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-brand/10 text-brand">
+                  <Icon className="h-5 w-5" strokeWidth={1.9} />
+                </span>
                 <span>
-                  <span className="block font-bold">{title}</span>
+                  <span className="block font-semibold">{title}</span>
                   <span className="block text-sm text-muted">{text}</span>
                 </span>
               </li>
@@ -198,7 +201,7 @@ export function Onboarding({ token, prefill }: { token: string; prefill: Prefill
         <Dots step="about" />
         <div className="mt-8 flex flex-col items-center text-center">
           <Avatar name={`${firstName} ${lastName}`} url={prefill.photoUrl} size={84} />
-          <h1 className="mt-4 text-2xl font-extrabold">{t('ob.nice')}</h1>
+          <h1 className="mt-4 text-xl font-bold">{t('ob.nice')}</h1>
           <p className="text-sm text-muted">{t('ob.prefilled')}</p>
         </div>
         <div className="mt-6 space-y-4">
@@ -208,7 +211,7 @@ export function Onboarding({ token, prefill }: { token: string; prefill: Prefill
           <Field label={t('ob.last_name')}>
             <Input value={lastName} onChange={(e) => setLastName(e.target.value)} autoComplete="family-name" maxLength={64} />
           </Field>
-          <div className="rounded-2xl bg-surface p-4 ring-1 ring-line/60">
+          <div className="rounded-2xl bg-surface p-4">
             <div className="font-semibold">
               {t('ob.phone_title')} <span className="font-normal text-muted">{t('ob.optional')}</span>
             </div>
@@ -266,21 +269,23 @@ export function Onboarding({ token, prefill }: { token: string; prefill: Prefill
       <div className="mx-auto flex min-h-screen max-w-md flex-col px-6 pb-8 pt-8">
         <Dots step="privacy" />
         <div className="mt-8 text-center">
-          <div className="text-5xl">🔒</div>
-          <h1 className="mt-3 text-2xl font-extrabold">{t('ob.privacy_title')}</h1>
+          <span className="mx-auto grid h-14 w-14 place-items-center rounded-full bg-brand/10 text-brand">
+            <ShieldCheck className="h-7 w-7" strokeWidth={1.75} />
+          </span>
+          <h1 className="mt-3 text-xl font-bold">{t('ob.privacy_title')}</h1>
           <p className="text-sm text-muted">{t('ob.privacy_short')}</p>
         </div>
         <ul className="mt-6 space-y-3 text-sm">
-          {[
-            ['🗂️', t('privacy.keep_title'), t('privacy.keep_text')],
-            ['🎯', t('privacy.why_title'), t('privacy.why_text')],
-            ['🚫', t('privacy.never_title'), t('privacy.never_text')],
-            ['✏️', t('privacy.control_title'), t('privacy.control_text', { contact: shop.data?.supportPhone || t('privacy.the_shop') })],
-          ].map(([icon, title, text]) => (
-            <li key={title} className="flex gap-3 rounded-2xl bg-surface p-3.5 ring-1 ring-line/60">
-              <span className="text-xl">{icon}</span>
+          {([
+            [FolderLock, t('privacy.keep_title'), t('privacy.keep_text')],
+            [Target, t('privacy.why_title'), t('privacy.why_text')],
+            [Ban, t('privacy.never_title'), t('privacy.never_text')],
+            [Pencil, t('privacy.control_title'), t('privacy.control_text', { contact: shop.data?.supportPhone || t('privacy.the_shop') })],
+          ] as [LucideIcon, string, string][]).map(([Icon, title, text]) => (
+            <li key={title} className="flex gap-3 rounded-2xl bg-surface p-3.5">
+              <Icon className="mt-0.5 h-5 w-5 shrink-0 text-muted" strokeWidth={1.9} />
               <span>
-                <span className="block font-bold">{title}</span>
+                <span className="block font-semibold">{title}</span>
                 <span className="text-muted">{text}</span>
               </span>
             </li>
@@ -312,34 +317,40 @@ export function Onboarding({ token, prefill }: { token: string; prefill: Prefill
     <div className="mx-auto flex min-h-screen max-w-md flex-col px-6 pb-8 pt-8">
       <Dots step="done" />
       <div className="mt-8 flex flex-col items-center text-center">
-        <div className="animate-wiggle text-6xl">🎉</div>
-        <h1 className="mt-3 text-2xl font-extrabold">{r.status === 'existing' ? t('ob.welcome_back', { name: r.user.firstName }) : t('ob.youre_in', { name: r.user.firstName })}</h1>
+        <span className="grid h-16 w-16 place-items-center rounded-full bg-brand/10 text-brand">
+          <PartyPopper className="h-8 w-8" strokeWidth={1.75} />
+        </span>
+        <h1 className="mt-3 text-xl font-bold">{r.status === 'existing' ? t('ob.welcome_back', { name: r.user.firstName }) : t('ob.youre_in', { name: r.user.firstName })}</h1>
         <p className="text-sm text-muted">{t('ob.ready', { shop: shopName })}</p>
       </div>
 
-      <div className="animate-rise mt-6 rounded-3xl bg-gradient-to-br from-amber-300 via-amber-400 to-orange-400 p-5 text-amber-950 shadow-lg shadow-orange-900/10">
-        <div className="flex items-center justify-between gap-2">
-          <Badge className="bg-white/40">
-            {r.loyalty.level.emoji} {r.loyalty.level.name}
-          </Badge>
-          {r.welcome?.pointsAwarded ? <Badge className="bg-white/40">{t('ob.welcome_bonus', { n: r.welcome.pointsAwarded })}</Badge> : null}
+      <div className="animate-rise mt-6 rounded-2xl bg-surface p-4">
+        <div className="flex items-center justify-between gap-2 text-sm">
+          <span className="font-semibold">{r.loyalty.level.name}</span>
+          {r.welcome?.pointsAwarded ? <Badge className="bg-brand/10 text-brand">{t('ob.welcome_bonus', { n: r.welcome.pointsAwarded })}</Badge> : null}
         </div>
-        <div className="mt-3 text-5xl font-black tabular-nums">
-          <CountUp value={r.loyalty.balance} duration={1400} /> <span className="text-xl font-bold">{t('common.points')}</span>
+        <div className="mt-2 flex items-center gap-2">
+          <Star className="h-7 w-7 fill-amber-400 text-amber-400" />
+          <span className="text-4xl font-bold tabular-nums">
+            <CountUp value={r.loyalty.balance} duration={1400} />
+          </span>
+          <span className="self-end pb-1 text-sm text-muted">{t('common.points')}</span>
         </div>
         {progress && (
           <>
-            <ProgressBar percent={progress.percent} className="mt-4 bg-white/40" tone="brand" />
-            <p className="mt-2 text-sm font-semibold">{t('ob.more_to_unlock', { n: progress.remaining, reward: `${progress.emoji} ${progress.title}` })}</p>
+            <ProgressBar percent={progress.percent} className="mt-4" tone="sun" />
+            <p className="mt-2 text-sm text-muted">{t('ob.more_to_unlock', { n: progress.remaining, reward: progress.title })}</p>
           </>
         )}
       </div>
 
       {welcomeCoupon && (
-        <div className="animate-rise mt-4 flex items-center gap-3 rounded-3xl border-2 border-dashed border-brand/50 bg-surface p-4" style={{ animationDelay: '150ms' }}>
-          <span className="text-3xl">🎟️</span>
+        <div className="animate-rise mt-3 flex items-center gap-3 rounded-2xl bg-surface p-4" style={{ animationDelay: '150ms' }}>
+          <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-brand/10 text-brand">
+            <Ticket className="h-5 w-5" strokeWidth={1.9} />
+          </span>
           <span>
-            <span className="block font-bold">{welcomeCoupon.title}</span>
+            <span className="block font-semibold">{welcomeCoupon.title}</span>
             <span className="block text-sm text-muted">{t('ob.apply_at_checkout', { text: welcomeCoupon.coupon.description || welcomeCoupon.coupon.benefit })}</span>
           </span>
         </div>
@@ -351,11 +362,13 @@ export function Onboarding({ token, prefill }: { token: string; prefill: Prefill
             setAskUpdates(false);
             if (ok) haptic('success');
           }}
-          className="animate-rise mt-4 flex w-full items-center gap-3 rounded-3xl bg-sky-50 p-4 text-left dark:bg-sky-500/10"
+          className="animate-rise mt-3 flex w-full items-center gap-3 rounded-2xl bg-surface p-4 text-left"
         >
-          <span className="text-3xl">🔔</span>
-          <span>
-            <span className="block font-bold">{t('ob.updates_title')}</span>
+          <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-brand/10 text-brand">
+            <Bell className="h-5 w-5" strokeWidth={1.9} />
+          </span>
+          <span className="flex-1">
+            <span className="block font-semibold">{t('ob.updates_title')}</span>
             <span className="block text-sm text-muted">{t('ob.updates_text')}</span>
           </span>
         </button>
