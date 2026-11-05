@@ -8,7 +8,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Badge, Button, cx, Notice, Sheet, Spinner } from '../../components/ui';
 import { api, errorMessage } from '../../lib/api';
 import { money } from '../../lib/format';
-import { useT } from '../../lib/i18n';
+import { useT, type TKey } from '../../lib/i18n';
 import { uploadProductPhoto } from '../../lib/image';
 import { toast } from '../../lib/toast';
 import { extractXlsxImages, uploadPhotos } from '../../lib/xlsxImages';
@@ -139,8 +139,7 @@ async function readRows(file: File): Promise<ImportRow[]> {
       any = true;
       r[field] = typeof v === 'number' || typeof v === 'boolean' ? v : String(v);
     });
-    if (!r.sku && r.code != null) r.sku = r.code; // POS: the item code is the barcode
-    delete r.code;
+    // POS files: Code (and Barcode) are both sent — the shop checks either one against its SKUs.
     if (any) out.push(r);
   });
   return out;
@@ -151,6 +150,8 @@ interface Preview {
   summary: {
     create: number;
     update: number;
+    /** Already in the shop, nothing changed — skipped. */
+    same: number;
     error: number;
     newCategories: string[];
     roundedPrices: number;
@@ -159,7 +160,22 @@ interface Preview {
     sharedNames: { count: number; examples: string[] };
     fileHasStock: boolean;
   };
-  rows: { row: number; action: 'create' | 'update' | 'error'; name: string; category: string; priceCents: number | null; stock: number | null; hasPhoto?: boolean; error?: string }[];
+  rows: PreviewRow[];
+}
+type ImportField =
+  | 'name' | 'nameEn' | 'sku' | 'category' | 'priceCents' | 'compareAtCents' | 'unit'
+  | 'description' | 'descriptionEn' | 'emoji' | 'imageUrl' | 'featured' | 'active' | 'stock';
+interface PreviewRow {
+  row: number;
+  action: 'create' | 'update' | 'same' | 'error';
+  name: string;
+  category: string;
+  priceCents: number | null;
+  stock: number | null;
+  hasPhoto?: boolean;
+  changes?: ImportField[];
+  oldPriceCents?: number;
+  error?: string;
 }
 
 export function ImportProducts({ open, onClose }: { open: boolean; onClose: () => void }) {
@@ -180,6 +196,7 @@ export function ImportProducts({ open, onClose }: { open: boolean; onClose: () =
   const [unplacedImages, setUnplacedImages] = useState(0);
   const [replacePhotos, setReplacePhotos] = useState(false);
   const [photoProgress, setPhotoProgress] = useState<{ done: number; total: number } | null>(null);
+  const [showSame, setShowSame] = useState(false);
   const startStockN = Math.max(0, Math.min(1_000_000, Math.round(Number(startStock) || 0)));
   const previewFor = (r: ImportRow[], mode: 'file' | 'keep', start: number) =>
     api<Preview>('/admin/products/import', { body: { dryRun: true, rows: r, stockMode: mode, startStock: start } });
@@ -188,6 +205,7 @@ export function ImportProducts({ open, onClose }: { open: boolean; onClose: () =
     setRowImages(new Map());
     setUnplacedImages(0);
     setPhotoProgress(null);
+    setShowSame(false);
     setRows(null);
     setPreview(null);
     setError(null);
@@ -244,7 +262,7 @@ export function ImportProducts({ open, onClose }: { open: boolean; onClose: () =
         toImport = rows.map((r) => (urls.has(r.row) ? { ...r, imageUrl: urls.get(r.row)! } : r));
       }
       const r = await api<Preview>('/admin/products/import', { body: { dryRun: false, rows: toImport, stockMode, startStock: startStockN, replacePhotos } });
-      toast(t('imp.done', { create: r.summary.create, update: r.summary.update }), 'success');
+      toast(t('imp.done', { create: r.summary.create, update: r.summary.update, same: r.summary.same }), 'success');
       for (const k of [['admin', 'products'], ['admin', 'categories'], ['products'], ['categories']]) qc.invalidateQueries({ queryKey: k });
       close();
     } catch (e) {
@@ -265,10 +283,26 @@ export function ImportProducts({ open, onClose }: { open: boolean; onClose: () =
     return () => clearTimeout(timer);
   }, [stockMode, startStockN]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const valid = preview ? preview.summary.create + preview.summary.update : 0;
   // Rows whose picture will be used: valid rows, and (unless replacing) products without a photo yet.
   const photoRows = (preview?.rows ?? []).filter((r) => r.action !== 'error' && rowImages.has(r.row) && (!r.hasPhoto || replacePhotos)).map((r) => r.row);
-  const tone = { create: 'bg-emerald-100 text-emerald-800', update: 'bg-sky-100 text-sky-800', error: 'bg-rose-100 text-rose-800' } as const;
+  // What will be written: new and changed products, plus products already in the shop that get a photo.
+  const photoOnly = (preview?.rows ?? []).filter((r) => r.action === 'same' && photoRows.includes(r.row)).length;
+  const valid = preview ? preview.summary.create + preview.summary.update + photoOnly : 0;
+  const shownRows = (preview?.rows ?? []).filter((r) => showSame || r.action !== 'same');
+  const tone = {
+    create: 'bg-emerald-100 text-emerald-800',
+    update: 'bg-sky-100 text-sky-800',
+    same: 'bg-slate-100 text-slate-600 dark:bg-slate-500/20 dark:text-slate-300',
+    error: 'bg-rose-100 text-rose-800',
+  } as const;
+  /** "Price $3.00 → $3.25" / "Changed: name, unit". */
+  const changeText = (r: PreviewRow) => {
+    const other = (r.changes ?? []).filter((f) => f !== 'priceCents');
+    const parts: string[] = [];
+    if (r.oldPriceCents != null && r.priceCents != null) parts.push(t('imp.price_change', { from: money(r.oldPriceCents), to: money(r.priceCents) }));
+    if (other.length) parts.push(t('imp.changed', { fields: other.map((f) => t(`imp.f_${f}` as TKey)).join(', ') }));
+    return parts.join(' · ');
+  };
 
   return (
     <Sheet open={open} onClose={close} title={t('imp.title')} wide>
@@ -326,40 +360,46 @@ export function ImportProducts({ open, onClose }: { open: boolean; onClose: () =
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div className="text-sm">
               <span className="font-semibold">📄 {fileName}</span>
-              <span className="text-muted"> · {t('imp.summary', { create: preview.summary.create, update: preview.summary.update, error: preview.summary.error })}</span>
+              <span className="text-muted">
+                {' · '}
+                {t('imp.summary', { create: preview.summary.create, update: preview.summary.update, same: preview.summary.same, error: preview.summary.error })}
+              </span>
             </div>
             <button className="text-sm font-semibold text-brand underline" onClick={reset}>
               {t('imp.another')}
             </button>
           </div>
-          {/* Stock choice — preselected to "keep" when the file has no stock (typical POS export). */}
-          <div className="space-y-2 rounded-2xl bg-surface-2 p-3.5 text-sm">
-            {!preview.summary.fileHasStock && <p className="font-semibold">{t('imp.stock_none')}</p>}
-            <label className="flex items-start gap-2">
-              <input type="radio" className="mt-1" checked={stockMode === 'keep'} onChange={() => setStockMode('keep')} />
-              <span>
-                {t('imp.stock_keep')}{' '}
-                <input
-                  type="number"
-                  min={0}
-                  value={startStock}
-                  onChange={(e) => setStartStock(e.target.value)}
-                  onFocus={() => setStockMode('keep')}
-                  className="mx-1 w-20 rounded-lg border border-line bg-surface px-2 py-0.5 text-center"
-                  aria-label={t('imp.start_stock')}
-                />
-                {t('imp.stock_keep_after')}
-              </span>
-            </label>
-            <label className="flex items-start gap-2">
-              <input type="radio" className="mt-1" checked={stockMode === 'file'} onChange={() => setStockMode('file')} />
-              <span>{t('imp.stock_file')}</span>
-            </label>
-          </div>
+          {/* Stock choice — preselected to "keep" when the file has no stock (typical POS export).
+              Hidden when nothing will be written: it only matters for new or changed products. */}
+          {valid > 0 && (
+            <div className="space-y-2 rounded-2xl bg-surface-2 p-3.5 text-sm">
+              {!preview.summary.fileHasStock && <p className="font-semibold">{t('imp.stock_none')}</p>}
+              <label className="flex items-start gap-2">
+                <input type="radio" className="mt-1" checked={stockMode === 'keep'} onChange={() => setStockMode('keep')} />
+                <span>
+                  {t('imp.stock_keep')}{' '}
+                  <input
+                    type="number"
+                    min={0}
+                    value={startStock}
+                    onChange={(e) => setStartStock(e.target.value)}
+                    onFocus={() => setStockMode('keep')}
+                    className="mx-1 w-20 rounded-lg border border-line bg-surface px-2 py-0.5 text-center"
+                    aria-label={t('imp.start_stock')}
+                  />
+                  {t('imp.stock_keep_after')}
+                </span>
+              </label>
+              <label className="flex items-start gap-2">
+                <input type="radio" className="mt-1" checked={stockMode === 'file'} onChange={() => setStockMode('file')} />
+                <span>{t('imp.stock_file')}</span>
+              </label>
+            </div>
+          )}
           {preview.summary.newCategories.length > 0 && <Notice tone="info">{t('imp.new_cats', { names: preview.summary.newCategories.join(', ') })}</Notice>}
           {preview.summary.defaultCategoryCount > 0 && <Notice tone="info">{t('imp.default_cat', { n: preview.summary.defaultCategoryCount })}</Notice>}
           {preview.summary.roundedPrices > 0 && <Notice tone="info">{t('imp.rounded', { n: preview.summary.roundedPrices })}</Notice>}
-          {preview.summary.sharedNames.count > 0 && (
+          {valid > 0 && preview.summary.sharedNames.count > 0 && (
             <Notice tone="warn">{t('imp.shared_names', { n: preview.summary.sharedNames.count, examples: preview.summary.sharedNames.examples.slice(0, 3).join(', ') })}</Notice>
           )}
           {preview.summary.ignoredImages > 0 && <Notice tone="info">{t('imp.ignored_images', { n: preview.summary.ignoredImages })}</Notice>}
@@ -374,36 +414,57 @@ export function ImportProducts({ open, onClose }: { open: boolean; onClose: () =
           )}
           {unplacedImages > 0 && <Notice tone="warn">{t('imp.photos_unplaced', { n: unplacedImages })}</Notice>}
           {preview.summary.error > 0 && <Notice tone="warn">{t('imp.errors_skipped')}</Notice>}
-          <div className="max-h-[45vh] overflow-auto rounded-2xl ring-1 ring-line">
-            <table className="w-full text-sm">
-              <thead className="sticky top-0 bg-surface text-left text-xs text-muted">
-                <tr>
-                  <th className="px-3 py-2">{t('imp.col_row')}</th>
-                  <th className="px-3 py-2">{t('imp.col_name')}</th>
-                  <th className="px-3 py-2">{t('imp.col_category')}</th>
-                  <th className="px-3 py-2 text-right">{t('imp.col_price')}</th>
-                  <th className="px-3 py-2 text-right">{t('imp.col_stock')}</th>
-                  <th className="px-3 py-2">{t('imp.col_result')}</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-line">
-                {preview.rows.slice(0, 300).map((r) => (
-                  <tr key={r.row} className={cx(r.action === 'error' && 'bg-rose-50/60 dark:bg-rose-500/5')}>
-                    <td className="px-3 py-2 text-muted">{r.row}</td>
-                    <td className="px-3 py-2 font-semibold">{r.name || '—'}</td>
-                    <td className="px-3 py-2">{r.category || '—'}</td>
-                    <td className="px-3 py-2 text-right tabular-nums">{r.priceCents != null ? money(r.priceCents) : '—'}</td>
-                    <td className="px-3 py-2 text-right tabular-nums">{r.stock ?? '—'}</td>
-                    <td className="px-3 py-2">
-                      <Badge className={tone[r.action]}>{t(`imp.${r.action}`)}</Badge>
-                      {r.error && <div className="mt-0.5 text-xs text-rose-700 dark:text-rose-300">{r.error}</div>}
-                    </td>
+          {valid === 0 && preview.summary.same > 0 && <Notice tone="success">{t('imp.nothing_new')}</Notice>}
+          {preview.summary.same > 0 && (
+            <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl bg-surface-2 px-3.5 py-2.5 text-sm">
+              <span>{t('imp.same_skipped', { n: preview.summary.same })}</span>
+              <button className="font-semibold text-brand underline" onClick={() => setShowSame((v) => !v)}>
+                {showSame ? t('imp.same_hide') : t('imp.same_show')}
+              </button>
+            </div>
+          )}
+          {shownRows.length > 0 && (
+            <div className="max-h-[45vh] overflow-auto rounded-2xl ring-1 ring-line">
+              <table className="w-full text-sm">
+                <thead className="sticky top-0 bg-surface text-left text-xs text-muted">
+                  <tr>
+                    <th className="hidden px-3 py-2 sm:table-cell">{t('imp.col_row')}</th>
+                    <th className="px-3 py-2">{t('imp.col_name')}</th>
+                    <th className="px-3 py-2">{t('imp.col_category')}</th>
+                    <th className="px-3 py-2 text-right">{t('imp.col_price')}</th>
+                    <th className="px-3 py-2 text-right">{t('imp.col_stock')}</th>
+                    <th className="px-3 py-2">{t('imp.col_result')}</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-          {preview.rows.length > 300 && <p className="text-xs text-muted">{t('imp.showing', { n: 300 })}</p>}
+                </thead>
+                <tbody className="divide-y divide-line">
+                  {shownRows.slice(0, 300).map((r) => (
+                    <tr key={r.row} className={cx(r.action === 'error' && 'bg-rose-50/60 dark:bg-rose-500/5')}>
+                      <td className="hidden px-3 py-2 text-muted sm:table-cell">{r.row}</td>
+                      <td className="px-3 py-2">
+                        <div className="font-semibold">{r.name || '—'}</div>
+                        {r.action === 'update' && <div className="mt-0.5 text-xs text-sky-800 dark:text-sky-300">{changeText(r)}</div>}
+                      </td>
+                      <td className="px-3 py-2">{r.category || '—'}</td>
+                      <td className="px-3 py-2 text-right tabular-nums">{r.priceCents != null ? money(r.priceCents) : '—'}</td>
+                      <td className="px-3 py-2 text-right tabular-nums">{r.stock ?? '—'}</td>
+                      <td className="px-3 py-2">
+                        <Badge className={tone[r.action]}>{t(`imp.${r.action}`)}</Badge>
+                        {r.error && (
+                          <div className="mt-0.5 text-xs text-rose-700 dark:text-rose-300">
+                            <span className="sm:hidden">
+                              {t('imp.col_row')} {r.row} ·{' '}
+                            </span>
+                            {r.error}
+                          </div>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+          {shownRows.length > 300 && <p className="text-xs text-muted">{t('imp.showing', { n: 300 })}</p>}
           <p className="text-xs text-muted">{t('imp.photos_hint')}</p>
           {error && <Notice tone="error">{error}</Notice>}
           <Button block size="lg" disabled={valid === 0} loading={busy === 'import'} onClick={confirm}>

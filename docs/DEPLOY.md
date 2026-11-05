@@ -169,14 +169,15 @@ You can now open **`https://t.me/<your_bot>?startapp=store`**, which is what the
 3. Save as **.xlsx** or **.csv (UTF-8)** and upload it. Nothing is saved yet: you'll see a preview where each row is marked **ថ្មី (New)**, **កែប្រែ (Update)** or **កំហុស (Error)** with the reason.
 4. Tap **នាំចូលទំនិញ N (Import N products)**. Rows with errors are skipped. Fix them in the file and upload again.
 
-**Updating prices or stock in bulk:** upload the same sheet again with new numbers. A row whose **barcode/SKU** (or, without a barcode, the same **Khmer name**) already exists updates that product instead of adding a duplicate. Empty cells leave the current value unchanged. Stock changes are recorded in the stock history as "Import (row N)".
+**Updating prices or stock in bulk:** upload the same sheet again with new numbers. A row whose **barcode/SKU** (or, without a barcode, the same **Khmer name**) already exists updates that product instead of adding a duplicate. Rows where nothing changed are skipped. Empty cells leave the current value unchanged. Stock changes are recorded in the stock history as "Import (row N)".
 
 ### Uploading the POS export (Product List)
 
 Upload the POS system's **Product List** `.xlsx` exactly as exported; there's no need to copy it into the template. The import:
 
 - **Finds the header row** (`Code`, `Barcode`, `Name`, `Name2`, `Unit`, `Price`, `Stock Qty.`, `Product Group`, …), even below a title block.
-- **Uses `Barcode` to recognise a product, or `Code` when there's no barcode.** The same file uploaded again updates those products; it never creates duplicates. Products with the same name but different codes, such as sizes or scents, stay separate.
+- **Checks the `Code` and the `Barcode` against the shop's SKUs.** If either one is already in the shop, the product is already there and is never added again, even if a later export fills in a barcode the earlier one didn't have. Products with the same name but different codes, such as sizes or scents, stay separate.
+- **Only uploads what's new or changed.** The preview sorts every row into **ថ្មី (New)**, **បានផ្លាស់ប្តូរ (Changed)**, for example "Price $21.00 → $22.50", or **មានក្នុងហាងរួចហើយ (Already in the shop)**. Products already in the shop with nothing changed are skipped and not written at all. Uploading the same file twice does nothing: the preview says there's nothing new to upload. A newer export that repeats old items adds only the new products and updates only the changed ones.
 - **Turns `Product Group` into aisles.** A product without a group goes into **ផ្សេងៗ / Other**.
 - **Rounds prices to the cent.** Riel conversions such as `3.125` become `$3.13`, and the preview says how many.
 - **Asks about stock.** If the file has no stock (every row 0), it offers to **keep the shop's current stock**, with new products starting at a number you choose (50 by default), so nothing shows as sold out. Choose "use the stock from the file" once the POS tracks stock.

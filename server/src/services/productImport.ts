@@ -1,8 +1,10 @@
 /**
  * Bulk product import (from the dashboard's Excel/CSV upload).
  * The browser turns the spreadsheet into rows; this service validates every row, matches existing
- * products (by barcode/SKU, otherwise by Khmer name), auto-creates unknown aisles and — unless it is
- * a dry run — applies everything in one transaction with audited stock movements.
+ * products (the row's barcode or POS code against the shop's SKUs, otherwise by Khmer name),
+ * auto-creates unknown aisles and — unless it is a dry run — applies everything in one transaction
+ * with audited stock movements. Products already in the shop with nothing changed are skipped, so
+ * uploading the same (or a newer, overlapping) POS export never adds anything twice.
  */
 import { eq, sql } from 'drizzle-orm';
 import { z } from 'zod';
@@ -29,7 +31,10 @@ export const importSchema = z.object({
     .array(
       z.object({
         row: z.number().int(),
+        /** Barcode / SKU. */
         sku: cell,
+        /** POS item code (often the barcode itself, or an id like P0000095). */
+        code: cell,
         name: cell,
         nameEn: cell,
         category: cell,
@@ -78,15 +83,24 @@ const slugify = (s: string) =>
     .replace(/(^-|-$)/g, '')
     .slice(0, 50);
 
+/** Product fields an import row can change (shown in the preview as "what changed"). */
+export type ImportField =
+  | 'name' | 'nameEn' | 'sku' | 'category' | 'priceCents' | 'compareAtCents' | 'unit'
+  | 'description' | 'descriptionEn' | 'emoji' | 'imageUrl' | 'featured' | 'active' | 'stock';
+
 export interface ImportRowResult {
   row: number;
-  action: 'create' | 'update' | 'error';
+  /** same = the product is already in the shop exactly like this: nothing is written. */
+  action: 'create' | 'update' | 'same' | 'error';
   name: string;
   category: string;
   priceCents: number | null;
   stock: number | null;
   /** The matched product already has a photo (kept unless replacePhotos). */
   hasPhoto?: boolean;
+  /** update: which fields change, and the current price when the price changes. */
+  changes?: ImportField[];
+  oldPriceCents?: number;
   error?: string;
 }
 
@@ -104,6 +118,7 @@ export async function importProducts(input: z.infer<typeof importSchema>, actorU
   const catKey = (s: string) => s.trim().toLowerCase();
   const catLookup = new Map<string, number>();
   const catEmoji = new Map(allCategories.map((c) => [c.id, c.emoji]));
+  const catName = new Map(allCategories.map((c) => [c.id, c.name]));
   for (const c of allCategories) {
     catLookup.set(catKey(c.name), c.id);
     if (c.nameEn) catLookup.set(catKey(c.nameEn), c.id);
@@ -131,7 +146,12 @@ export async function importProducts(input: z.infer<typeof importSchema>, actorU
 
   for (const r of input.rows) {
     const name = text(r.name);
-    const sku = text(r.sku);
+    // A product is identified by its barcode or its POS code: either one found in the shop's SKUs
+    // means the product is already there (a later export may add a barcode to a code-only product).
+    const barcode = text(r.sku);
+    const code = text(r.code);
+    const ids = [...new Set([barcode, code].filter(Boolean).map((s) => s.toLowerCase()))];
+    const sku = barcode || code;
     const priceCents = parseMoney(r.price);
     const stockText = text(r.stock);
     const fileStock = stockText === '' ? null : Number(stockText.replace(/,/g, ''));
@@ -145,8 +165,8 @@ export async function importProducts(input: z.infer<typeof importSchema>, actorU
     // A barcode/code identifies the product. The name is only used to attach a code to a product that
     // was created by hand without one — and only when that's unambiguous.
     let existing: Product | null = null;
-    if (sku) {
-      existing = bySku.get(sku.toLowerCase()) ?? null;
+    if (ids.length) {
+      existing = ids.map((id) => bySku.get(id)).find(Boolean) ?? null;
       if (!existing && namesInFile.get(nameKey(name)) === 1) {
         const same = byName.get(nameKey(name)) ?? [];
         if (same.length === 1 && !same[0].sku) existing = same[0];
@@ -171,29 +191,27 @@ export async function importProducts(input: z.infer<typeof importSchema>, actorU
       fail(tr('imp.stock_invalid'));
       continue;
     }
-    const key = sku ? `sku:${sku.toLowerCase()}` : `name:${name.toLowerCase()}`;
-    if (seen.has(key)) {
-      fail(tr('imp.duplicate', { row: seen.get(key)! }));
+    const keys = ids.length ? ids.map((id) => `sku:${id}`) : [`name:${name.toLowerCase()}`];
+    const firstRow = keys.map((k) => seen.get(k)).find((v) => v != null);
+    if (firstRow != null) {
+      fail(tr('imp.duplicate', { row: firstRow }));
       continue;
     }
     if (existing && claimed.has(existing.id)) {
       fail(tr('imp.duplicate', { row: claimed.get(existing.id)! }));
       continue;
     }
-    seen.set(key, r.row);
+    for (const k of keys) seen.set(k, r.row);
     if (existing) claimed.set(existing.id, r.row);
-    if (category && !catLookup.has(catKey(category))) newCategories.add(category);
-    if (usesDefaultCategory) defaultCategoryCount++;
     if ((namesInFile.get(nameKey(name)) ?? 0) > 1) {
       sharedNameRows++;
       if (!sharedNames.has(nameKey(name))) sharedNames.set(nameKey(name), name);
     }
-    const rawPrice = typeof r.price === 'number' ? r.price : Number(text(r.price).replace(/[^\d.]/g, ''));
-    if (Number.isFinite(rawPrice) && Math.abs(rawPrice * 100 - Math.round(rawPrice * 100)) > 1e-6) roundedPrices++;
 
-    // Empty cells mean "keep what's there" when updating.
+    // Empty cells mean "keep what's there" when updating. A product's SKU, once set, stays as it is
+    // (it's how the next upload finds the product again).
     const values: Record<string, unknown> = { name };
-    if (sku) values.sku = sku;
+    if (sku && !existing?.sku) values.sku = sku;
     if (text(r.nameEn)) values.nameEn = text(r.nameEn);
     if (priceCents != null) values.priceCents = priceCents;
     if (compareText) values.compareAtCents = compareAtCents;
@@ -213,19 +231,40 @@ export async function importProducts(input: z.infer<typeof importSchema>, actorU
 
     // Stock to set (null = leave the current stock).
     const stock = keepStock ? (existing ? null : input.startStock) : base.stock;
-    plan.push({ row: r.row, existing, category, values, stock });
+
+    // Already in the shop and nothing differs → skipped (nothing written, nothing "uploaded again").
+    const changes: ImportField[] = [];
+    if (existing) {
+      if (category && catLookup.get(catKey(category)) !== existing.categoryId) changes.push('category');
+      for (const [k, v] of Object.entries(values)) if (existing[k as keyof Product] !== v) changes.push(k as ImportField);
+      if (stock != null && stock !== existing.stock) changes.push('stock');
+    }
+    const action = !existing ? 'create' : changes.length ? 'update' : 'same';
+    if (action !== 'same') {
+      plan.push({ row: r.row, existing, category, values, stock });
+      if (category && !catLookup.has(catKey(category))) newCategories.add(category);
+      if (usesDefaultCategory) defaultCategoryCount++;
+      const rawPrice = typeof r.price === 'number' ? r.price : Number(text(r.price).replace(/[^\d.]/g, ''));
+      if (changes.length === 0 || changes.includes('priceCents')) {
+        if (Number.isFinite(rawPrice) && Math.abs(rawPrice * 100 - Math.round(rawPrice * 100)) > 1e-6) roundedPrices++;
+      }
+    }
     results.push({
       ...base,
-      category,
+      category: category || (existing ? (catName.get(existing.categoryId) ?? '') : ''),
       stock: stock ?? existing?.stock ?? 0,
       hasPhoto: !!existing?.imageUrl,
-      action: existing ? 'update' : 'create',
+      action,
+      ...(action === 'update' ? { changes } : {}),
+      ...(changes.includes('priceCents') ? { oldPriceCents: existing!.priceCents } : {}),
     });
   }
 
   const summary = {
     create: results.filter((r) => r.action === 'create').length,
     update: results.filter((r) => r.action === 'update').length,
+    /** Already in the shop with nothing to change — skipped. */
+    same: results.filter((r) => r.action === 'same').length,
     error: results.filter((r) => r.action === 'error').length,
     newCategories: [...newCategories],
     /** Prices with more than 2 decimals (e.g. 3.125 from riel) — rounded to the cent. */

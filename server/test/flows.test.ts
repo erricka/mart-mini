@@ -15,6 +15,7 @@ import {
   couponRedemptions,
   coupons,
   customerRewards,
+  inventoryMovements,
   levels,
   notifications,
   orders,
@@ -667,13 +668,14 @@ describe('Removing a customer (admin)', () => {
 });
 
 describe('Importing a POS product export', () => {
-  // Shaped like the mart25 POS "Product List" export: Code, Name, Price, Stock Qty. (all 0), Product Group.
+  // Shaped like the mart25 POS "Product List" export: Code (Barcode empty), Name, Price, Stock Qty. (all 0), Product Group.
   const pos = [
-    { row: 7, sku: '8934868197911', name: 'សាប៊ូទឹក Viso', price: 3.125, stock: 0, category: 'សាប៊ូ' },
-    { row: 8, sku: '8851932471015', name: 'សាប៊ូទឹក Viso', price: 3.125, stock: 0, category: 'សាប៊ូ' },
-    { row: 9, sku: 'P0000095', name: 'ធុងជូត ព្រៀបស', price: 21, stock: 0, category: 'ធុងជូត' },
-    { row: 10, sku: 'P0000096', name: 'កៅអីផ្លាស្ទិក', price: 4, stock: 0, category: null },
+    { row: 7, code: '8934868197911', sku: null, name: 'សាប៊ូទឹក Viso', price: 3.125, stock: 0, category: 'សាប៊ូ' },
+    { row: 8, code: '8851932471015', sku: null, name: 'សាប៊ូទឹក Viso', price: 3.125, stock: 0, category: 'សាប៊ូ' },
+    { row: 9, code: 'P0000095', sku: null, name: 'ធុងជូត ព្រៀបស', price: 21, stock: 0, category: 'ធុងជូត' },
+    { row: 10, code: 'P0000096', sku: null, name: 'កៅអីផ្លាស្ទិក', price: 4, stock: 0, category: null },
   ];
+  const importPos = (rows: object[], dryRun = false) => call('POST', '/api/admin/products/import', adminToken, { dryRun, stockMode: 'keep', startStock: 25, rows });
 
   it('keeps same-name variants apart, rounds riel-style prices, defaults the category and spots stock-less files', async () => {
     const preview = await call('POST', '/api/admin/products/import', adminToken, { dryRun: true, stockMode: 'keep', startStock: 25, rows: pos });
@@ -692,15 +694,62 @@ describe('Importing a POS product export', () => {
     expect(other).toMatchObject({ name: 'ផ្សេងៗ', nameEn: 'Other' });
   });
 
-  it('re-uploading the POS file updates prices by code and leaves stock alone in keep mode', async () => {
+  it('uploading the same file again adds nothing and writes nothing', async () => {
+    const before = await db.select().from(products);
+    const moves = (await db.select().from(inventoryMovements)).length;
+    const preview = await importPos(pos, true);
+    expect(preview.json.summary).toMatchObject({ create: 0, update: 0, same: 4, error: 0, roundedPrices: 0, newCategories: [] });
+    expect(preview.json.rows.every((r: any) => r.action === 'same')).toBe(true);
+    const r = await importPos(pos);
+    expect(r.json.summary).toMatchObject({ create: 0, update: 0, same: 4 });
+    const after = await db.select().from(products);
+    expect(after.length).toBe(before.length);
+    const stamp = (ps: typeof before) => ps.map((p) => `${p.id}:${p.updatedAt.toISOString()}`).sort();
+    expect(stamp(after)).toEqual(stamp(before)); // not even touched
+    expect((await db.select().from(inventoryMovements)).length).toBe(moves);
+  });
+
+  it('a newer export adds only new products, updates only what changed, and leaves stock alone in keep mode', async () => {
     const [before] = await db.select().from(products).where(eq(products.sku, 'P0000095'));
     await db.update(products).set({ stock: 7 }).where(eq(products.id, before.id)); // sold some in the shop
-    const again = pos.map((r) => (r.sku === 'P0000095' ? { ...r, price: 22.5 } : r));
-    const r = await call('POST', '/api/admin/products/import', adminToken, { dryRun: false, stockMode: 'keep', startStock: 25, rows: again });
-    expect(r.json.summary).toMatchObject({ create: 0, update: 4 });
+    const newer = [
+      ...pos.map((r) => (r.code === 'P0000095' ? { ...r, price: 22.5 } : r)),
+      { row: 11, code: 'P0000097', sku: null, name: 'កន្ត្រកផ្លាស្ទិក', price: 2, stock: 0, category: 'ធុងជូត' },
+    ];
+    const preview = await importPos(newer, true);
+    expect(preview.json.summary).toMatchObject({ create: 1, update: 1, same: 3 });
+    expect(preview.json.rows.find((r: any) => r.row === 9)).toMatchObject({ action: 'update', changes: ['priceCents'], oldPriceCents: 2100, priceCents: 2250 });
+    const r = await importPos(newer);
+    expect(r.json.summary).toMatchObject({ create: 1, update: 1, same: 3 });
     const [after] = await db.select().from(products).where(eq(products.sku, 'P0000095'));
     expect(after.priceCents).toBe(2250);
     expect(after.stock).toBe(7); // the POS file's 0 did not wipe the shop's stock
+    expect((await db.select().from(products).where(eq(products.sku, 'P0000097'))).length).toBe(1);
+  });
+
+  it('recognises a product by its code or its barcode — a barcode added later never makes a duplicate', async () => {
+    const count = (await db.select().from(products)).length;
+    // Next export: the Barcode column is now filled for P0000096 (the code stays the same).
+    const r = await importPos([{ row: 10, code: 'P0000096', sku: '8859999000096', name: 'កៅអីផ្លាស្ទិក', price: 4, stock: 0, category: null }]);
+    expect(r.json.summary).toMatchObject({ create: 0, error: 0 });
+    // And a file that only has the barcode for a product stored under that barcode-as-code.
+    const r2 = await importPos([{ row: 2, code: null, sku: '8934868197911', name: 'សាប៊ូទឹក Viso', price: 3.125, stock: 0, category: 'សាប៊ូ' }]);
+    expect(r2.json.summary).toMatchObject({ create: 0, same: 1 });
+    expect((await db.select().from(products)).length).toBe(count);
+    const [chair] = await db.select().from(products).where(eq(products.name, 'កៅអីផ្លាស្ទិក'));
+    expect(chair.sku).toBe('P0000096'); // the shop's SKU stays the same, so the next upload finds it again
+  });
+
+  it('the same product twice in one file (by code or barcode) is reported, not added twice', async () => {
+    const r = await importPos(
+      [
+        { row: 2, code: 'P0000200', sku: null, name: 'ផលិតផល A', price: 1, category: 'ធុងជូត' },
+        { row: 3, code: 'X1', sku: 'P0000200', name: 'ផលិតផល A', price: 1, category: 'ធុងជូត' },
+      ],
+      true,
+    );
+    expect(r.json.summary).toMatchObject({ create: 1, error: 1 });
+    expect(r.json.rows.find((x: any) => x.row === 3).error).toMatch(/2/);
   });
 
   it('attaches a POS code to a hand-made product with the same unique name, but never guesses between variants', async () => {
@@ -769,10 +818,11 @@ describe('Product photos', () => {
       dryRun: false,
       rows: [{ row: 7, sku: 'PHOTO-003', name: 'កែវទឹក', price: 1, imageUrl: photo }],
     });
-    expect(r.json.summary.update).toBe(1);
+    expect(r.json.summary).toMatchObject({ update: 0, same: 1 }); // photo kept → nothing to change
     const [glass] = await db.select().from(products).where(eq(products.sku, 'PHOTO-003'));
     expect(glass.imageUrl).toBe('https://example.com/old.jpg');
-    await call('POST', '/api/admin/products/import', adminToken, { dryRun: false, replacePhotos: true, rows: [{ row: 7, sku: 'PHOTO-003', name: 'កែវទឹក', price: 1, imageUrl: photo }] });
+    const rep = await call('POST', '/api/admin/products/import', adminToken, { dryRun: false, replacePhotos: true, rows: [{ row: 7, sku: 'PHOTO-003', name: 'កែវទឹក', price: 1, imageUrl: photo }] });
+    expect(rep.json.rows[0]).toMatchObject({ action: 'update', changes: ['imageUrl'] });
     const [replaced] = await db.select().from(products).where(eq(products.sku, 'PHOTO-003'));
     expect(replaced.imageUrl).toBe(photo);
   });
