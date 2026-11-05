@@ -171,7 +171,26 @@ You can now open **`https://t.me/<your_bot>?startapp=store`**, which is what the
 
 **Updating prices or stock in bulk:** upload the same sheet again with new numbers. A row whose **barcode/SKU** (or, without a barcode, the same **Khmer name**) already exists updates that product instead of adding a duplicate. Empty cells leave the current value unchanged. Stock changes are recorded in the stock history as "Import (row N)".
 
-**Photos:** after importing, open a product → **កែប្រែ (Edit) → 📷 ផ្ទុករូបថត (Upload photo)**. Or put photo links in `image_url` before importing.
+### Uploading the POS export (Product List)
+
+Upload the POS system's **Product List** `.xlsx` exactly as exported; there's no need to copy it into the template. The import:
+
+- **Finds the header row** (`Code`, `Barcode`, `Name`, `Name2`, `Unit`, `Price`, `Stock Qty.`, `Product Group`, …), even below a title block.
+- **Uses `Barcode` to recognise a product, or `Code` when there's no barcode.** The same file uploaded again updates those products; it never creates duplicates. Products with the same name but different codes, such as sizes or scents, stay separate.
+- **Turns `Product Group` into aisles.** A product without a group goes into **ផ្សេងៗ / Other**.
+- **Rounds prices to the cent.** Riel conversions such as `3.125` become `$3.13`, and the preview says how many.
+- **Asks about stock.** If the file has no stock (every row 0), it offers to **keep the shop's current stock**, with new products starting at a number you choose (50 by default), so nothing shows as sold out. Choose "use the stock from the file" once the POS tracks stock.
+- **Warns about shared names.** Customers can't tell products with identical names apart, so add the size or scent to the name in the POS. Capitals are ignored: "Soft" and "SOFT" count as the same name.
+
+### Product photos
+
+There are three ways to add photos. All of them shrink the photo in the browser and keep it in the shop's own database, so nothing extra to pay for.
+
+1. **Pictures inside the POS file.** If the export's `Image` column holds pictures, the import finds each one and puts it on the product in that row. Existing photos are kept unless you tick **Replace photos that products already have**. Pictures placed with Excel 365's "Place in cell" can't be read; the preview counts them.
+2. **📷 Upload photos (many at once).** Name each photo after the product's **barcode/code** (`8934868197911.jpg`) or its **exact name** (`សាប៊ូទឹក Downy.jpg`). Select them all, check the matches in the preview, then save. Unknown or ambiguous names are flagged and skipped.
+3. **One product at a time.** The **📷 No photo** filter lists products still without a photo. Tap the 📷 on a product to take or choose a photo, or open **កែប្រែ (Edit) → 📷 ផ្ទុករូបថត (Upload photo)**.
+
+You can also put `https://` photo links in the `image_url` column before importing.
 
 ## Delivery fee by distance (map)
 

@@ -665,3 +665,115 @@ describe('Removing a customer (admin)', () => {
     expect(done.json.user.pointsBalance).toBe(0);
   });
 });
+
+describe('Importing a POS product export', () => {
+  // Shaped like the mart25 POS "Product List" export: Code, Name, Price, Stock Qty. (all 0), Product Group.
+  const pos = [
+    { row: 7, sku: '8934868197911', name: 'សាប៊ូទឹក Viso', price: 3.125, stock: 0, category: 'សាប៊ូ' },
+    { row: 8, sku: '8851932471015', name: 'សាប៊ូទឹក Viso', price: 3.125, stock: 0, category: 'សាប៊ូ' },
+    { row: 9, sku: 'P0000095', name: 'ធុងជូត ព្រៀបស', price: 21, stock: 0, category: 'ធុងជូត' },
+    { row: 10, sku: 'P0000096', name: 'កៅអីផ្លាស្ទិក', price: 4, stock: 0, category: null },
+  ];
+
+  it('keeps same-name variants apart, rounds riel-style prices, defaults the category and spots stock-less files', async () => {
+    const preview = await call('POST', '/api/admin/products/import', adminToken, { dryRun: true, stockMode: 'keep', startStock: 25, rows: pos });
+    expect(preview.status).toBe(200);
+    expect(preview.json.summary).toMatchObject({ create: 4, update: 0, error: 0, roundedPrices: 2, defaultCategoryCount: 1, fileHasStock: false });
+    expect(preview.json.summary.sharedNames).toMatchObject({ count: 2, examples: ['សាប៊ូទឹក Viso'] });
+    expect(preview.json.rows.every((r: any) => r.stock === 25)).toBe(true);
+
+    const applied = await call('POST', '/api/admin/products/import', adminToken, { dryRun: false, stockMode: 'keep', startStock: 25, rows: pos });
+    expect(applied.json.summary.create).toBe(4);
+    const viso = await db.select().from(products).where(eq(products.name, 'សាប៊ូទឹក Viso'));
+    expect(viso.map((p) => p.sku).sort()).toEqual(['8851932471015', '8934868197911']); // two products, not one overwritten
+    expect(viso.every((p) => p.priceCents === 313 && p.stock === 25)).toBe(true);
+    const [chair] = await db.select().from(products).where(eq(products.sku, 'P0000096'));
+    const [other] = await db.select().from(categories).where(eq(categories.id, chair.categoryId));
+    expect(other).toMatchObject({ name: 'ផ្សេងៗ', nameEn: 'Other' });
+  });
+
+  it('re-uploading the POS file updates prices by code and leaves stock alone in keep mode', async () => {
+    const [before] = await db.select().from(products).where(eq(products.sku, 'P0000095'));
+    await db.update(products).set({ stock: 7 }).where(eq(products.id, before.id)); // sold some in the shop
+    const again = pos.map((r) => (r.sku === 'P0000095' ? { ...r, price: 22.5 } : r));
+    const r = await call('POST', '/api/admin/products/import', adminToken, { dryRun: false, stockMode: 'keep', startStock: 25, rows: again });
+    expect(r.json.summary).toMatchObject({ create: 0, update: 4 });
+    const [after] = await db.select().from(products).where(eq(products.sku, 'P0000095'));
+    expect(after.priceCents).toBe(2250);
+    expect(after.stock).toBe(7); // the POS file's 0 did not wipe the shop's stock
+  });
+
+  it('attaches a POS code to a hand-made product with the same unique name, but never guesses between variants', async () => {
+    const [cat] = await db.select().from(categories).limit(1);
+    const [manual] = await db.insert(products).values({ categoryId: cat.id, name: 'ទឹកសុទ្ធ Vital', priceCents: 50, stock: 12 }).returning();
+    const r = await call('POST', '/api/admin/products/import', adminToken, {
+      dryRun: false,
+      rows: [{ row: 2, sku: '8850000999001', name: 'ទឹកសុទ្ធ Vital', price: 0.5, stock: 40, category: cat.name }],
+    });
+    expect(r.json.summary).toMatchObject({ create: 0, update: 1 });
+    const [linked] = await db.select().from(products).where(eq(products.id, manual.id));
+    expect(linked).toMatchObject({ sku: '8850000999001', stock: 40 });
+  });
+});
+
+describe('Product photos', () => {
+  const photo = '/media/0b6a3f0e-6c11-4f43-9a51-6e8b3c2a9d10.jpg';
+  let catId: number;
+  beforeAll(async () => {
+    [{ id: catId }] = await db.select({ id: categories.id }).from(categories).limit(1);
+  });
+
+  it('saves a product whose photo was uploaded to the shop (regression: /media links were refused)', async () => {
+    const created = await call('POST', '/api/admin/products', adminToken, { categoryId: catId, name: 'រូបថតតេស្ត', priceCents: 100, imageUrl: photo, stock: 3 });
+    expect(created.status).toBe(201);
+    const edited = await call('PUT', `/api/admin/products/${created.json.product.id}`, adminToken, { categoryId: catId, name: 'រូបថតតេស្ត 2', priceCents: 120, imageUrl: photo });
+    expect(edited.status).toBe(200);
+    expect(edited.json.product.imageUrl).toBe(photo);
+  });
+
+  it('matches photos to products by code or exact name, keeps existing photos, then assigns', async () => {
+    await db.insert(products).values([
+      { categoryId: catId, name: 'ឆ្នាំងដាំបាយ', sku: 'PHOTO-001', priceCents: 900, stock: 2 },
+      { categoryId: catId, name: 'ប៉ោងភ្លើង', priceCents: 300, stock: 2 },
+      { categoryId: catId, name: 'កែវទឹក', sku: 'PHOTO-003', priceCents: 100, stock: 2, imageUrl: 'https://example.com/old.jpg' },
+    ]);
+    const items = [{ key: 'photo-001' }, { key: 'ប៉ោងភ្លើង' }, { key: 'PHOTO-003' }, { key: 'nothing-like-this' }];
+    const dry = await call('POST', '/api/admin/products/photos', adminToken, { dryRun: true, items });
+    expect(dry.json.results.map((r: any) => r.status)).toEqual(['matched', 'matched', 'kept', 'none']);
+    const url2 = '/media/1b6a3f0e-6c11-4f43-9a51-6e8b3c2a9d11.jpg';
+    const done = await call('POST', '/api/admin/products/photos', adminToken, {
+      dryRun: false,
+      items: [{ key: 'photo-001', url: photo }, { key: 'ប៉ោងភ្លើង', url: url2 }, { key: 'PHOTO-003', url: photo }],
+    });
+    expect(done.json.matched).toBe(2);
+    const [rice] = await db.select().from(products).where(eq(products.sku, 'PHOTO-001'));
+    expect(rice.imageUrl).toBe(photo);
+    const [glass] = await db.select().from(products).where(eq(products.sku, 'PHOTO-003'));
+    expect(glass.imageUrl).toBe('https://example.com/old.jpg'); // kept: replace was off
+  });
+
+  it('sets one product photo quickly and lists products still without a photo', async () => {
+    const before = await call('GET', '/api/admin/products?photo=missing', adminToken);
+    const target = before.json.products[0];
+    expect(target.imageUrl).toBeNull();
+    expect(before.json.summary.noPhoto).toBeGreaterThan(0);
+    const r = await call('PUT', `/api/admin/products/${target.id}/photo`, adminToken, { imageUrl: photo });
+    expect(r.status).toBe(200);
+    const after = await call('GET', '/api/admin/products?photo=missing', adminToken);
+    expect(after.json.products.some((p: any) => p.id === target.id)).toBe(false);
+    expect((await call('PUT', `/api/admin/products/${target.id}/photo`, adminToken, { imageUrl: 'javascript:alert(1)' })).status).toBe(400);
+  });
+
+  it('POS import adds photos to products without one, never silently replaces a photo', async () => {
+    const r = await call('POST', '/api/admin/products/import', adminToken, {
+      dryRun: false,
+      rows: [{ row: 7, sku: 'PHOTO-003', name: 'កែវទឹក', price: 1, imageUrl: photo }],
+    });
+    expect(r.json.summary.update).toBe(1);
+    const [glass] = await db.select().from(products).where(eq(products.sku, 'PHOTO-003'));
+    expect(glass.imageUrl).toBe('https://example.com/old.jpg');
+    await call('POST', '/api/admin/products/import', adminToken, { dryRun: false, replacePhotos: true, rows: [{ row: 7, sku: 'PHOTO-003', name: 'កែវទឹក', price: 1, imageUrl: photo }] });
+    const [replaced] = await db.select().from(products).where(eq(products.sku, 'PHOTO-003'));
+    expect(replaced.imageUrl).toBe(photo);
+  });
+});

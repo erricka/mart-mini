@@ -9,7 +9,7 @@ import { tr } from '../../lib/i18n.js';
 import { idParam, parse } from '../../lib/validate.js';
 import { makeGuards } from '../../plugins/auth.js';
 import { importProducts, importSchema } from '../../services/productImport.js';
-import { saveMedia } from '../../services/media.js';
+import { isPhotoUrl, saveMedia } from '../../services/media.js';
 
 const productInput = z.object({
   categoryId: z.number().int().positive(),
@@ -26,7 +26,7 @@ const productInput = z.object({
     .string()
     .trim()
     .max(500)
-    .refine((v) => v === '' || v.startsWith('/uploads/') || /^https:\/\//.test(v), 'err.image_url')
+    .refine((v) => v === '' || isPhotoUrl(v), 'err.image_url')
     .nullable()
     .optional(),
   tags: z.string().trim().max(300).default(''),
@@ -73,6 +73,8 @@ export async function adminCatalogRoutes(app: FastifyInstance) {
         q: z.string().trim().max(80).optional(),
         categoryId: z.coerce.number().int().positive().optional(),
         stock: z.enum(['all', 'low', 'out']).default('all'),
+        /** 'missing' = products without a photo (to photograph them one by one). */
+        photo: z.enum(['all', 'missing']).default('all'),
         includeInactive: z.coerce.boolean().default(true),
       }),
       req.query,
@@ -85,6 +87,7 @@ export async function adminCatalogRoutes(app: FastifyInstance) {
     if (q.categoryId) where.push(eq(products.categoryId, q.categoryId));
     if (q.stock === 'low') where.push(sql`${products.stock} between 1 and 5`);
     if (q.stock === 'out') where.push(eq(products.stock, 0));
+    if (q.photo === 'missing') where.push(sql`${products.imageUrl} is null`);
     if (!q.includeInactive) where.push(eq(products.active, true));
     const rows = await db
       .select()
@@ -96,6 +99,7 @@ export async function adminCatalogRoutes(app: FastifyInstance) {
         total: sql<number>`count(*)::int`,
         out: sql<number>`count(*) filter (where ${products.stock} = 0 and ${products.active})::int`,
         low: sql<number>`count(*) filter (where ${products.stock} between 1 and 5 and ${products.active})::int`,
+        noPhoto: sql<number>`count(*) filter (where ${products.imageUrl} is null and ${products.active})::int`,
       })
       .from(products);
     return { products: rows, summary };
@@ -220,6 +224,60 @@ export async function adminCatalogRoutes(app: FastifyInstance) {
       .returning();
     if (!c) throw notFound(tr('err.category_not_found'));
     return { category: c };
+  });
+
+  // ---------- Product photos ----------
+  /**
+   * Bulk photos: each photo's file name (without extension) is matched to a product's barcode/code,
+   * or else to its exact name. dryRun → the matches; otherwise assigns the uploaded photos. Existing
+   * photos are kept unless replace = true.
+   */
+  app.post('/products/photos', { bodyLimit: 1_000_000 }, async (req) => {
+    const body = parse(
+      z.object({
+        dryRun: z.boolean().default(true),
+        replace: z.boolean().default(false),
+        items: z.array(z.object({ key: z.string().trim().min(1).max(200), url: z.string().trim().max(500).optional() })).max(2000),
+      }),
+      req.body,
+    );
+    const all = await db.select({ id: products.id, name: products.name, sku: products.sku, imageUrl: products.imageUrl }).from(products);
+    const bySku = new Map(all.filter((p) => p.sku).map((p) => [p.sku!.toLowerCase(), p]));
+    const byName = new Map<string, typeof all>();
+    for (const p of all) byName.set(p.name.trim().toLowerCase(), [...(byName.get(p.name.trim().toLowerCase()) ?? []), p]);
+    const used = new Set<number>();
+    const results = body.items.map((it) => {
+      const k = it.key.toLowerCase();
+      const named = byName.get(k) ?? [];
+      const p = bySku.get(k) ?? (named.length === 1 ? named[0] : undefined);
+      if (!p) return { key: it.key, status: named.length > 1 ? ('ambiguous' as const) : ('none' as const) };
+      if (used.has(p.id)) return { key: it.key, status: 'duplicate' as const, productId: p.id, productName: p.name };
+      used.add(p.id);
+      const status = p.imageUrl && !body.replace ? ('kept' as const) : ('matched' as const);
+      return { key: it.key, status, productId: p.id, productName: p.name, sku: p.sku, url: it.url };
+    });
+    if (!body.dryRun) {
+      await db.transaction(async (tx) => {
+        for (const r of results) {
+          if (r.status !== 'matched' || !r.url || !isPhotoUrl(r.url)) continue;
+          await tx.update(products).set({ imageUrl: r.url, updatedAt: new Date() }).where(eq(products.id, r.productId!));
+        }
+      });
+    }
+    return {
+      dryRun: body.dryRun,
+      matched: results.filter((r) => r.status === 'matched').length,
+      results: results.map(({ url: _url, ...r }) => r),
+    };
+  });
+
+  /** Set one product's photo (quick 📷 from the catalog list). */
+  app.put('/products/:id/photo', async (req) => {
+    const { id } = parse(idParam, req.params);
+    const { imageUrl } = parse(z.object({ imageUrl: z.string().trim().max(500).refine(isPhotoUrl, 'err.image_url').nullable() }), req.body);
+    const [p] = await db.update(products).set({ imageUrl, updatedAt: new Date() }).where(eq(products.id, id)).returning();
+    if (!p) throw notFound(tr('err.product_not_found'));
+    return { product: p };
   });
 
   // ---------- Image upload (stored in the database → works without a persistent disk) ----------

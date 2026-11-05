@@ -25,3 +25,11 @@ export async function shrinkImage(file: File, maxSide = 1000, quality = 0.85): P
     return file;
   }
 }
+
+/** Shrinks a photo and uploads it to the shop (stored in the database); returns its /media/… link. */
+export async function uploadProductPhoto(file: File): Promise<string> {
+  const { api } = await import('./api');
+  const fd = new FormData();
+  fd.append('file', await shrinkImage(file));
+  return (await api<{ url: string }>('/admin/uploads', { form: fd, method: 'POST' })).url;
+}

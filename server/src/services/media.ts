@@ -13,6 +13,9 @@ import { db } from '../db/client.js';
 import { media, orderItems, products } from '../db/schema.js';
 
 export const MEDIA_ID = /^[0-9a-f-]{36}\.(jpg|png|webp|gif)$/;
+/** A product photo link we accept: our own uploaded photo, an old /uploads/ file, or an https:// image. */
+export const isPhotoUrl = (v: string) =>
+  /^\/media\/[0-9a-f-]{36}\.(jpg|png|webp|gif)$/.test(v) || /^\/uploads\/[\w.-]+$/.test(v) || /^https:\/\/\S+$/.test(v);
 const TYPES: Record<string, string> = { jpg: 'image/jpeg', png: 'image/png', webp: 'image/webp', gif: 'image/gif' };
 
 export async function saveMedia(bytes: Buffer, ext: string): Promise<string> {

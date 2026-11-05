@@ -4,25 +4,31 @@
  * Khmer headers), shows a server-validated preview, then imports the valid rows in one go.
  */
 import { useQueryClient } from '@tanstack/react-query';
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Badge, Button, cx, Notice, Sheet, Spinner } from '../../components/ui';
 import { api, errorMessage } from '../../lib/api';
 import { money } from '../../lib/format';
 import { useT } from '../../lib/i18n';
+import { uploadProductPhoto } from '../../lib/image';
 import { toast } from '../../lib/toast';
+import { extractXlsxImages, uploadPhotos } from '../../lib/xlsxImages';
 
 type Field =
-  | 'name' | 'nameEn' | 'sku' | 'category' | 'price' | 'compareAt' | 'stock' | 'unit'
+  | 'name' | 'nameEn' | 'sku' | 'code' | 'category' | 'price' | 'compareAt' | 'stock' | 'unit'
   | 'description' | 'descriptionEn' | 'emoji' | 'imageUrl' | 'featured' | 'active';
 
+// Our template's columns plus common POS export names (e.g. the mart25 POS "Product List":
+// Code, Name, Name2, Price, Stock Qty., Product Group …). Cost/supply price is never imported.
 const HEADERS: Record<Field, string[]> = {
-  name: ['name_km', 'name', 'khmer_name', 'product', 'ឈ្មោះ', 'ឈ្មោះខ្មែរ', 'ឈ្មោះទំនិញ'],
-  nameEn: ['name_en', 'english_name', 'english', 'ឈ្មោះអង់គ្លេស'],
-  sku: ['sku', 'barcode', 'code', 'បាកូដ'],
-  category: ['category', 'aisle', 'ប្រភេទ', 'ប្រភេទទំនិញ'],
-  price: ['price', 'តម្លៃ'],
+  name: ['name_km', 'name', 'khmer_name', 'product', 'product_name', 'item_name', 'name_kh', 'ឈ្មោះ', 'ឈ្មោះខ្មែរ', 'ឈ្មោះទំនិញ'],
+  nameEn: ['name_en', 'name2', 'name_2', 'english_name', 'english', 'ឈ្មោះអង់គ្លេស'],
+  sku: ['sku', 'barcode', 'bar_code', 'បាកូដ'],
+  /** POS item code — used as the barcode/SKU when the Barcode column is empty. */
+  code: ['code', 'item_code', 'product_code', 'លេខកូដ'],
+  category: ['category', 'aisle', 'product_group', 'group', 'category_name', 'product_category', 'ប្រភេទ', 'ប្រភេទទំនិញ'],
+  price: ['price', 'selling_price', 'sale_price', 'unit_price', 'retail_price', 'តម្លៃ', 'តម្លៃលក់'],
   compareAt: ['compare_at_price', 'was', 'was_price', 'old_price', 'តម្លៃដើម'],
-  stock: ['stock', 'qty', 'quantity', 'ស្តុក', 'ចំនួន'],
+  stock: ['stock', 'qty', 'quantity', 'stock_qty', 'stock_quantity', 'qty_on_hand', 'on_hand', 'ស្តុក', 'ចំនួន'],
   unit: ['unit', 'size', 'ខ្នាត'],
   description: ['description_km', 'description', 'ការពិពណ៌នា'],
   descriptionEn: ['description_en'],
@@ -37,7 +43,9 @@ const normalize = (h: unknown) =>
     .replace(/\(.*?\)/g, '')
     .trim()
     .toLowerCase()
-    .replace(/[\s-]+/g, '_');
+    // Spaces, dots and dashes all become "_" ("Stock Qty." → "stock_qty"); Khmer letters/marks stay.
+    .replace(/[^\p{L}\p{M}\p{N}]+/gu, '_')
+    .replace(/^_+|_+$/g, '');
 
 const FIELD_BY_HEADER = new Map<string, Field>();
 for (const [field, names] of Object.entries(HEADERS) as [Field, string[]][]) for (const n of names) FIELD_BY_HEADER.set(normalize(n), field);
@@ -107,20 +115,32 @@ async function readRows(file: File): Promise<ImportRow[]> {
   } else {
     table = parseCsv(await file.text());
   }
-  if (table.length < 2) return [];
-  const map = table[0].map((h) => FIELD_BY_HEADER.get(normalize(h)) ?? null);
-  if (!map.includes('name')) return [];
+  // POS exports start with a title / export date; the header row is the first one naming the product
+  // and at least a price, code or group.
+  const headerAt = table.slice(0, 25).findIndex((cells) => {
+    const fields = new Set((cells ?? []).map((h) => FIELD_BY_HEADER.get(normalize(h))));
+    return fields.has('name') && (fields.has('price') || fields.has('sku') || fields.has('code') || fields.has('category'));
+  });
+  if (headerAt < 0 || table.length < headerAt + 2) return [];
+  const map = table[headerAt].map((h) => FIELD_BY_HEADER.get(normalize(h)) ?? null);
   const out: ImportRow[] = [];
-  table.slice(1).forEach((cells, i) => {
-    const r: ImportRow = { row: i + 2 };
+  table.slice(headerAt + 1).forEach((cells, i) => {
+    const r: ImportRow = { row: headerAt + i + 2 }; // the spreadsheet's own row number
     let any = false;
     map.forEach((field, col) => {
       if (!field) return;
-      let v = cells[col] as unknown;
+      let v = (cells ?? [])[col] as unknown;
       if (v instanceof Date) v = v.toISOString().slice(0, 10);
-      if (v != null && String(v).trim() !== '') any = true;
-      r[field] = v == null ? null : typeof v === 'number' || typeof v === 'boolean' ? v : String(v);
+      const empty = v == null || String(v).trim() === '';
+      if (empty) {
+        if (!(field in r)) r[field] = null; // never let an empty column hide a filled one (Barcode vs Code)
+        return;
+      }
+      any = true;
+      r[field] = typeof v === 'number' || typeof v === 'boolean' ? v : String(v);
     });
+    if (!r.sku && r.code != null) r.sku = r.code; // POS: the item code is the barcode
+    delete r.code;
     if (any) out.push(r);
   });
   return out;
@@ -128,8 +148,18 @@ async function readRows(file: File): Promise<ImportRow[]> {
 
 interface Preview {
   dryRun: boolean;
-  summary: { create: number; update: number; error: number; newCategories: string[] };
-  rows: { row: number; action: 'create' | 'update' | 'error'; name: string; category: string; priceCents: number | null; stock: number | null; error?: string }[];
+  summary: {
+    create: number;
+    update: number;
+    error: number;
+    newCategories: string[];
+    roundedPrices: number;
+    ignoredImages: number;
+    defaultCategoryCount: number;
+    sharedNames: { count: number; examples: string[] };
+    fileHasStock: boolean;
+  };
+  rows: { row: number; action: 'create' | 'update' | 'error'; name: string; category: string; priceCents: number | null; stock: number | null; hasPhoto?: boolean; error?: string }[];
 }
 
 export function ImportProducts({ open, onClose }: { open: boolean; onClose: () => void }) {
@@ -142,8 +172,22 @@ export function ImportProducts({ open, onClose }: { open: boolean; onClose: () =
   const [busy, setBusy] = useState<'read' | 'import' | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
+  // Stock: POS files that don't track stock say 0 for everything — don't sell-out the whole shop.
+  const [stockMode, setStockMode] = useState<'file' | 'keep'>('file');
+  const [startStock, setStartStock] = useState('50');
+  // Pictures inside the file (POS "Image" column), by spreadsheet row.
+  const [rowImages, setRowImages] = useState<Map<number, Blob>>(new Map());
+  const [unplacedImages, setUnplacedImages] = useState(0);
+  const [replacePhotos, setReplacePhotos] = useState(false);
+  const [photoProgress, setPhotoProgress] = useState<{ done: number; total: number } | null>(null);
+  const startStockN = Math.max(0, Math.min(1_000_000, Math.round(Number(startStock) || 0)));
+  const previewFor = (r: ImportRow[], mode: 'file' | 'keep', start: number) =>
+    api<Preview>('/admin/products/import', { body: { dryRun: true, rows: r, stockMode: mode, startStock: start } });
 
   const reset = () => {
+    setRowImages(new Map());
+    setUnplacedImages(0);
+    setPhotoProgress(null);
     setRows(null);
     setPreview(null);
     setError(null);
@@ -166,7 +210,17 @@ export function ImportProducts({ open, onClose }: { open: boolean; onClose: () =
         return;
       }
       setRows(parsed);
-      setPreview(await api<Preview>('/admin/products/import', { body: { dryRun: true, rows: parsed } }));
+      if (/\.xlsx$/i.test(file.name)) {
+        const imgs = await extractXlsxImages(file).catch(() => ({ byRow: new Map<number, Blob>(), unplaced: 0 }));
+        setRowImages(imgs.byRow);
+        setUnplacedImages(imgs.unplaced);
+      }
+      let p = await previewFor(parsed, 'file', startStockN);
+      if (!p.summary.fileHasStock) {
+        setStockMode('keep');
+        p = await previewFor(parsed, 'keep', startStockN);
+      } else setStockMode('file');
+      setPreview(p);
     } catch (e) {
       setError(e instanceof Error && /fetch|reach|server/i.test(e.message) ? errorMessage(e) : t('imp.bad_file'));
     } finally {
@@ -178,7 +232,18 @@ export function ImportProducts({ open, onClose }: { open: boolean; onClose: () =
     if (!rows) return;
     setBusy('import');
     try {
-      const r = await api<Preview>('/admin/products/import', { body: { dryRun: false, rows } });
+      // Photos first (resized in the browser), then the import links them to their products.
+      let toImport = rows;
+      if (photoRows.length) {
+        setPhotoProgress({ done: 0, total: photoRows.length });
+        const urls = await uploadPhotos(
+          photoRows.map((row) => ({ key: row, blob: rowImages.get(row)!, name: `row-${row}.${rowImages.get(row)!.type.split('/')[1] ?? 'jpg'}` })),
+          uploadProductPhoto,
+          (done, total) => setPhotoProgress({ done, total }),
+        );
+        toImport = rows.map((r) => (urls.has(r.row) ? { ...r, imageUrl: urls.get(r.row)! } : r));
+      }
+      const r = await api<Preview>('/admin/products/import', { body: { dryRun: false, rows: toImport, stockMode, startStock: startStockN, replacePhotos } });
       toast(t('imp.done', { create: r.summary.create, update: r.summary.update }), 'success');
       for (const k of [['admin', 'products'], ['admin', 'categories'], ['products'], ['categories']]) qc.invalidateQueries({ queryKey: k });
       close();
@@ -189,7 +254,20 @@ export function ImportProducts({ open, onClose }: { open: boolean; onClose: () =
     }
   }
 
+  // Changing the stock option refreshes the preview.
+  useEffect(() => {
+    if (!rows || !preview) return;
+    const timer = setTimeout(() => {
+      previewFor(rows, stockMode, startStockN)
+        .then(setPreview)
+        .catch((e) => setError(errorMessage(e)));
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [stockMode, startStockN]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const valid = preview ? preview.summary.create + preview.summary.update : 0;
+  // Rows whose picture will be used: valid rows, and (unless replacing) products without a photo yet.
+  const photoRows = (preview?.rows ?? []).filter((r) => r.action !== 'error' && rowImages.has(r.row) && (!r.hasPhoto || replacePhotos)).map((r) => r.row);
   const tone = { create: 'bg-emerald-100 text-emerald-800', update: 'bg-sky-100 text-sky-800', error: 'bg-rose-100 text-rose-800' } as const;
 
   return (
@@ -200,6 +278,7 @@ export function ImportProducts({ open, onClose }: { open: boolean; onClose: () =
             <li>{t('imp.step1')}</li>
             <li>{t('imp.step2')}</li>
             <li className="text-muted">{t('imp.step3')}</li>
+            <li className="font-semibold text-brand">{t('imp.pos_hint')}</li>
           </ol>
           <Button variant="secondary" onClick={downloadTemplate}>
             {t('imp.template')}
@@ -253,7 +332,47 @@ export function ImportProducts({ open, onClose }: { open: boolean; onClose: () =
               {t('imp.another')}
             </button>
           </div>
+          {/* Stock choice — preselected to "keep" when the file has no stock (typical POS export). */}
+          <div className="space-y-2 rounded-2xl bg-surface-2 p-3.5 text-sm">
+            {!preview.summary.fileHasStock && <p className="font-semibold">{t('imp.stock_none')}</p>}
+            <label className="flex items-start gap-2">
+              <input type="radio" className="mt-1" checked={stockMode === 'keep'} onChange={() => setStockMode('keep')} />
+              <span>
+                {t('imp.stock_keep')}{' '}
+                <input
+                  type="number"
+                  min={0}
+                  value={startStock}
+                  onChange={(e) => setStartStock(e.target.value)}
+                  onFocus={() => setStockMode('keep')}
+                  className="mx-1 w-20 rounded-lg border border-line bg-surface px-2 py-0.5 text-center"
+                  aria-label={t('imp.start_stock')}
+                />
+                {t('imp.stock_keep_after')}
+              </span>
+            </label>
+            <label className="flex items-start gap-2">
+              <input type="radio" className="mt-1" checked={stockMode === 'file'} onChange={() => setStockMode('file')} />
+              <span>{t('imp.stock_file')}</span>
+            </label>
+          </div>
           {preview.summary.newCategories.length > 0 && <Notice tone="info">{t('imp.new_cats', { names: preview.summary.newCategories.join(', ') })}</Notice>}
+          {preview.summary.defaultCategoryCount > 0 && <Notice tone="info">{t('imp.default_cat', { n: preview.summary.defaultCategoryCount })}</Notice>}
+          {preview.summary.roundedPrices > 0 && <Notice tone="info">{t('imp.rounded', { n: preview.summary.roundedPrices })}</Notice>}
+          {preview.summary.sharedNames.count > 0 && (
+            <Notice tone="warn">{t('imp.shared_names', { n: preview.summary.sharedNames.count, examples: preview.summary.sharedNames.examples.slice(0, 3).join(', ') })}</Notice>
+          )}
+          {preview.summary.ignoredImages > 0 && <Notice tone="info">{t('imp.ignored_images', { n: preview.summary.ignoredImages })}</Notice>}
+          {rowImages.size > 0 && (
+            <div className="space-y-1.5 rounded-2xl bg-sky-50 p-3.5 text-sm text-sky-900 dark:bg-sky-500/10 dark:text-sky-200">
+              <p className="font-semibold">{t('imp.photos_found', { n: rowImages.size, used: photoRows.length })}</p>
+              <label className="flex items-center gap-2">
+                <input type="checkbox" checked={replacePhotos} onChange={(e) => setReplacePhotos(e.target.checked)} />
+                {t('imp.replace_photos')}
+              </label>
+            </div>
+          )}
+          {unplacedImages > 0 && <Notice tone="warn">{t('imp.photos_unplaced', { n: unplacedImages })}</Notice>}
           {preview.summary.error > 0 && <Notice tone="warn">{t('imp.errors_skipped')}</Notice>}
           <div className="max-h-[45vh] overflow-auto rounded-2xl ring-1 ring-line">
             <table className="w-full text-sm">
@@ -288,7 +407,7 @@ export function ImportProducts({ open, onClose }: { open: boolean; onClose: () =
           <p className="text-xs text-muted">{t('imp.photos_hint')}</p>
           {error && <Notice tone="error">{error}</Notice>}
           <Button block size="lg" disabled={valid === 0} loading={busy === 'import'} onClick={confirm}>
-            {t('imp.confirm', { n: valid })}
+            {photoProgress && busy === 'import' ? t('imp.uploading_photos', { done: photoProgress.done, total: photoProgress.total }) : t('imp.confirm', { n: valid })}
           </Button>
         </div>
       )}

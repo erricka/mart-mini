@@ -4,11 +4,12 @@ import { ProductImage } from '../../components/ProductImage';
 import { Badge, Button, Card, cx, EmptyState, ErrorState, Field, Input, Notice, Select, Sheet, Skeleton, Textarea, Toggle } from '../../components/ui';
 import { api, errorMessage } from '../../lib/api';
 import { dateTime, fromCents, money, toCents } from '../../lib/format';
-import { shrinkImage } from '../../lib/image';
+import { shrinkImage, uploadProductPhoto } from '../../lib/image';
 import { toast } from '../../lib/toast';
 import { translate, useT, type TKey } from '../../lib/i18n';
 import { PageHeader, Td, Th } from './common';
 import { ImportProducts } from './ImportProducts';
+import { PhotoUploads } from './PhotoUploads';
 
 interface AdminProduct {
   id: number;
@@ -47,6 +48,7 @@ export function ProductsPage() {
   const cats = useAdminCategories();
   const [tab, setTab] = useState<'products' | 'categories'>('products');
   const [importOpen, setImportOpen] = useState(false);
+  const [photosOpen, setPhotosOpen] = useState(false);
   const [editing, setEditing] = useState<Partial<AdminProduct> | null>(null);
   const newProduct = () => {
     setTab('products');
@@ -62,6 +64,9 @@ export function ProductsPage() {
             <Button variant="secondary" onClick={() => setImportOpen(true)}>
               {t('ap.import')}
             </Button>
+            <Button variant="secondary" onClick={() => setPhotosOpen(true)}>
+              {t('ph.button')}
+            </Button>
             <Button onClick={newProduct}>{t('ap.add_product')}</Button>
           </>
         }
@@ -74,6 +79,7 @@ export function ProductsPage() {
       {tab === 'products' ? <Products onNew={newProduct} onImport={() => setImportOpen(true)} /> : <Categories />}
       <ProductEditor product={editing} categories={cats.data ?? []} onClose={() => setEditing(null)} />
       <ImportProducts open={importOpen} onClose={() => setImportOpen(false)} />
+      <PhotoUploads open={photosOpen} onClose={() => setPhotosOpen(false)} />
     </div>
   );
 }
@@ -83,15 +89,17 @@ function Products({ onNew, onImport }: { onNew: () => void; onImport: () => void
   const [q, setQ] = useState('');
   const [categoryId, setCategoryId] = useState('');
   const [stock, setStock] = useState<'all' | 'low' | 'out'>('all');
+  const [noPhoto, setNoPhoto] = useState(false);
   const [editing, setEditing] = useState<Partial<AdminProduct> | null>(null);
   const [stockFor, setStockFor] = useState<AdminProduct | null>(null);
   const cats = useAdminCategories();
   const params = new URLSearchParams({ stock });
+  if (noPhoto) params.set('photo', 'missing');
   if (q.trim()) params.set('q', q.trim());
   if (categoryId) params.set('categoryId', categoryId);
   const list = useQuery({
-    queryKey: ['admin', 'products', q.trim(), categoryId, stock],
-    queryFn: () => api<{ products: AdminProduct[]; summary: { total: number; out: number; low: number } }>(`/admin/products?${params}`),
+    queryKey: ['admin', 'products', q.trim(), categoryId, stock, noPhoto],
+    queryFn: () => api<{ products: AdminProduct[]; summary: { total: number; out: number; low: number; noPhoto: number } }>(`/admin/products?${params}`),
     placeholderData: (p) => p,
   });
   const catOf = (id: number) => cats.data?.find((c) => c.id === id);
@@ -109,6 +117,9 @@ function Products({ onNew, onImport }: { onNew: () => void; onImport: () => void
             {s === 'all' ? t('ap.filter_all', { n: list.data?.summary.total ?? '…' }) : s === 'low' ? t('ap.filter_low', { n: list.data?.summary.low ?? 0 }) : t('ap.filter_out', { n: list.data?.summary.out ?? 0 })}
           </button>
         ))}
+        <button onClick={() => setNoPhoto(!noPhoto)} className={cx('rounded-full px-3 py-1.5 text-sm font-semibold', noPhoto ? 'bg-ink text-bg' : 'bg-surface ring-1 ring-line')}>
+          {t('ph.filter_missing', { n: list.data?.summary.noPhoto ?? 0 })}
+        </button>
       </div>
 
       {list.isLoading ? <Skeleton className="h-96" /> : list.error ? <ErrorState error={list.error} onRetry={() => list.refetch()} /> : list.data!.summary.total === 0 ? (
@@ -134,7 +145,10 @@ function Products({ onNew, onImport }: { onNew: () => void; onImport: () => void
                   <tr key={p.id} className={cx(!p.active && 'opacity-60')}>
                     <Td>
                       <div className="flex items-center gap-3">
-                        <div className="w-11 shrink-0"><ProductImage emoji={p.emoji} imageUrl={p.imageUrl} color={c?.color} size="sm" /></div>
+                        <div className="relative w-11 shrink-0">
+                          <ProductImage emoji={p.emoji} imageUrl={p.imageUrl} color={c?.color} size="sm" />
+                          {!p.imageUrl && <QuickPhoto productId={p.id} />}
+                        </div>
                         <div className="min-w-0"><div className="font-semibold">{p.name}</div><div className="text-xs text-muted">{[p.nameEn, p.unit, p.sku].filter(Boolean).join(' · ')}</div></div>
                       </div>
                     </Td>
@@ -358,6 +372,45 @@ function Categories() {
           </div>
         )}
       </Sheet>
+    </>
+  );
+}
+
+/** 📷 on a product without a photo: opens the phone camera (or file picker) and saves the photo. */
+function QuickPhoto({ productId }: { productId: number }) {
+  const { t } = useT();
+  const qc = useQueryClient();
+  const input = useRef<HTMLInputElement>(null);
+  const [busy, setBusy] = useState(false);
+  const onFile = async (file: File | undefined) => {
+    if (!file) return;
+    setBusy(true);
+    try {
+      const url = await uploadProductPhoto(file);
+      await api(`/admin/products/${productId}/photo`, { method: 'PUT', body: { imageUrl: url } });
+      toast(t('ph.saved_one'), 'success');
+      qc.invalidateQueries({ queryKey: ['admin', 'products'] });
+      qc.invalidateQueries({ queryKey: ['products'] });
+    } catch (e) {
+      toast(errorMessage(e), 'error');
+    } finally {
+      setBusy(false);
+      if (input.current) input.current.value = '';
+    }
+  };
+  return (
+    <>
+      <input ref={input} type="file" accept="image/*" capture="environment" hidden onChange={(e) => void onFile(e.target.files?.[0])} />
+      <button
+        type="button"
+        onClick={() => input.current?.click()}
+        disabled={busy}
+        title={t('ph.take')}
+        aria-label={t('ph.take')}
+        className="absolute -bottom-1 -right-1 grid h-6 w-6 place-items-center rounded-full bg-brand text-xs text-brand-ink shadow ring-2 ring-surface"
+      >
+        {busy ? '…' : '📷'}
+      </button>
     </>
   );
 }
