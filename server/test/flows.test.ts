@@ -502,13 +502,23 @@ describe('Map delivery: distance fee and "tomorrow" option', () => {
     expect(again.json.order.delivery.speed).toBe('same_day');
   });
 
-  it('refuses pins beyond the delivery limit', async () => {
+  it('delivers anywhere by default: a far pin gets a distance fee, not a refusal', async () => {
+    const [s] = await db.select().from(shopSettings);
+    expect(s.deliveryMaxKm).toBeNull(); // mart25 default: no distance limit
+    const q = await call('POST', '/api/checkout/quote', token, { items: [{ productId: ids.apples, quantity: 2 }], fulfillmentType: 'delivery', location: north(18) });
+    expect(q.json.quote.delivery).toMatchObject({ status: 'ok', distanceKm: 23.4 });
+    expect(q.json.quote.baseDeliveryFeeCents).toBe(625); // 0.38 + 0.25 × 23.4 km, rounded up to 5¢
+  });
+
+  it('refuses pins beyond a delivery limit when the shop sets one', async () => {
+    await db.update(shopSettings).set({ deliveryMaxKm: 20 });
     const r = await order(token, { fulfillmentType: 'delivery', address: { ...address, save: false }, location: north(18), items: [{ productId: ids.apples, quantity: 10 }] });
     expect(r.status).toBe(409);
     expect(r.json.error.code).toBe('delivery_unsupported');
     const q = await call('POST', '/api/checkout/quote', token, { items: [{ productId: ids.apples, quantity: 10 }], fulfillmentType: 'delivery', location: north(18) });
     expect(q.json.quote.baseDeliveryFeeCents).toBeNull(); // never $0, even above the free-delivery threshold
     expect(q.json.quote.delivery.freeDelivery).toBe(false);
+    await db.update(shopSettings).set({ deliveryMaxKm: null });
   });
 
   it('lets admins turn a pasted link or coordinates into the store pin', async () => {

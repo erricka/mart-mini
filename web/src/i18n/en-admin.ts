@@ -459,7 +459,7 @@ export const enAdmin = {
   'as.dm_per_km': 'Price per km',
   'as.dm_min': 'Minimum fee',
   'as.dm_max_km': 'Farthest delivery (km)',
-  'as.dm_max_km_hint': 'Empty = no limit',
+  'as.dm_max_km_hint': 'Empty = deliver anywhere (no limit)',
   'as.dm_examples': 'Today’s fee examples',
   'as.dm_km': '{km} km',
   'as.dm_rates_note': 'Starting rates: ៛1,500 base, ៛1,000 per km, ៛2,500 minimum. Adjust them to match local delivery prices.',

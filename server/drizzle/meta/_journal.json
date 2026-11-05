@@ -43,6 +43,13 @@
       "when": 1793762778800,
       "tag": "0005_maps_usage",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1793846157398,
+      "tag": "0006_deliver_anywhere",
+      "breakpoints": true
     }
   ]
 }

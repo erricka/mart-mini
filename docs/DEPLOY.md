@@ -182,7 +182,7 @@ At checkout, customers choosing delivery **drop a pin on a map**: they move the 
 - **Free delivery** follows one explicit rule: the basket's items reach **Free delivery from** (Dashboard → ការកំណត់ Settings → Delivery & pickup; e.g. `25.00`). Leave it empty to switch free delivery off. Free-delivery rewards also apply.
 - **The fee is never guessed.** Until the customer gives the location the calculator needs, checkout says *"Enter your delivery address to calculate the fee"*. That location is the map pin in distance mode, or a saved or typed address in flat-fee mode. Free delivery and $0 only appear after the location is validated **and** the basket meets the rule. Moving the pin or changing the basket recalculates the fee. While it recalculates, "Place order" waits. An address outside the delivery area, or a failed calculation, shows a message next to the address with *Try again* or *Choose pickup*, never a fee.
 - **The server re-checks everything before creating the order.** If the fee or total changed since the customer looked (for example, they edited the basket in another tab), the order is refused with *"The delivery fee or total changed…"*, and the summary refreshes.
-- Pins farther than the **farthest delivery** distance (20 km by default) can't order delivery. Those customers are asked to choose pickup.
+- **mart25 delivers everywhere:** there is no distance limit, and farther addresses simply cost more (base fare + price per km). If you ever want a limit, set **Farthest delivery (km)** in Settings → 🛵. Customers beyond it are then asked to choose pickup.
 
 **Default prices:** **៛1,500 base, ៛1,000 per km, ៛2,500 minimum**, about $0.38, $0.25 and $0.63. That gives roughly:
 

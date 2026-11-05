@@ -200,8 +200,8 @@ export const shopSettings = pgTable(
     deliveryBaseCents: integer('delivery_base_cents').notNull().default(38),
     deliveryPerKmCents: integer('delivery_per_km_cents').notNull().default(25),
     deliveryMinFeeCents: integer('delivery_min_fee_cents').notNull().default(63),
-    /** Farthest delivery distance in km (road estimate). Null = no limit. */
-    deliveryMaxKm: integer('delivery_max_km').default(20),
+    /** Farthest delivery distance in km (road estimate). Null = deliver anywhere (mart25's choice). */
+    deliveryMaxKm: integer('delivery_max_km'),
     /** "I can wait until tomorrow" option with its own flat fee (never more than the same-day fee). */
     nextDayEnabled: boolean('next_day_enabled').notNull().default(true),
     nextDayFeeCents: integer('next_day_fee_cents').notNull().default(200),
