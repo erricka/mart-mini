@@ -8,6 +8,7 @@ import { useT } from '../../lib/i18n';
 import { toast } from '../../lib/toast';
 import { useShop } from '../../lib/queries';
 import type { LatLng } from '../../lib/types';
+import { ActivityLog } from './ActivityLog';
 import { BranchesManager } from './Branches';
 import { type LoyaltyData, PageHeader, settingsPayload, useIsAdmin, useLoyalty } from './common';
 
@@ -23,7 +24,22 @@ export function SettingsPage() {
   const q = useLoyalty();
   if (q.isLoading) return <Skeleton className="h-96" />;
   if (q.error || !q.data) return <ErrorState error={q.error} onRetry={() => q.refetch()} />;
-  return <SettingsForm key={q.data.settings.updatedAt} data={q.data} />;
+  return (
+    <>
+      <SettingsForm key={q.data.settings.updatedAt} data={q.data} />
+      <AdminActivity />
+    </>
+  );
+}
+
+function AdminActivity() {
+  const isAdmin = useIsAdmin();
+  if (!isAdmin) return null;
+  return (
+    <Card className="mt-4">
+      <ActivityLog />
+    </Card>
+  );
 }
 
 function SettingsForm({ data }: { data: LoyaltyData }) {

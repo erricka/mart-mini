@@ -606,3 +606,17 @@ export const maintenanceRuns = pgTable('maintenance_runs', {
   ranAt: ts('ran_at').notNull().defaultNow(),
   result: jsonb('result'),
 });
+
+/** Every change made in the dashboard (who, what, when) — for accountability. */
+export const adminAudit = pgTable(
+  'admin_audit',
+  {
+    id: serial('id').primaryKey(),
+    userId: integer('user_id').references(() => users.id, { onDelete: 'set null' }),
+    method: text('method').notNull(),
+    path: text('path').notNull(),
+    status: integer('status').notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [index('admin_audit_created_idx').on(t.createdAt)],
+);

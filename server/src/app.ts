@@ -10,6 +10,8 @@ import fastifyStatic from '@fastify/static';
 import Fastify, { type FastifyError } from 'fastify';
 import { config } from './config.js';
 import { AppError, isCheckViolation } from './lib/errors.js';
+import { db } from './db/client.js';
+import { adminAudit } from './db/schema.js';
 import { parseLang, runWithLang, tr } from './lib/i18n.js';
 import { adminCatalogRoutes } from './routes/admin/catalog.js';
 import { adminCustomerRoutes } from './routes/admin/customers.js';
@@ -56,10 +58,20 @@ export async function buildApp() {
   });
   await app.register(jwt, { secret: config.SESSION_SECRET });
   await app.register(rateLimit, {
-    global: false,
+    // A ceiling on every API call (bursts from scripts / stolen sessions); sensitive routes have their
+    // own, tighter limits. Pages, scripts and product photos are not counted.
+    global: true,
+    max: 300,
+    timeWindow: '1 minute',
+    allowList: (req) => !req.url.startsWith('/api/') || req.url === '/api/health',
     // Runs after auth guards so signed-in users are limited per account (many mobile users share carrier IPs).
     hook: 'preHandler',
-    keyGenerator: (req) => (req.account ? `u:${req.account.id}` : `ip:${req.ip}`),
+    // Per account when known, else per session token (many phones share one carrier IP), else per IP.
+    keyGenerator: (req) => {
+      if (req.account) return `u:${req.account.id}`;
+      const auth = req.headers.authorization;
+      return auth && auth.length > 40 ? `t:${auth.slice(-43)}` : `ip:${req.ip}`;
+    },
   });
   await app.register(multipart, { limits: { fileSize: config.MAX_UPLOAD_MB * 1024 * 1024, files: 1 } });
   app.decorateRequest('account', null);
@@ -97,6 +109,14 @@ export async function buildApp() {
       await api.register(customerRoutes);
       await api.register(
         async (admin) => {
+          // Accountability: every change made in the dashboard is recorded (who, what, when, result).
+          admin.addHook('onResponse', async (req, reply) => {
+            if (req.method === 'GET' || req.method === 'HEAD' || !req.account) return;
+            await db
+              .insert(adminAudit)
+              .values({ userId: req.account.id, method: req.method, path: req.url.split('?')[0].slice(0, 200), status: reply.statusCode })
+              .catch((err) => req.log.warn({ err }, 'audit log write failed'));
+          });
           await admin.register(adminOrderRoutes);
           await admin.register(adminCatalogRoutes);
           await admin.register(adminLoyaltyRoutes);

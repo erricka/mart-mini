@@ -1,8 +1,8 @@
-import { asc, eq, inArray, sql } from 'drizzle-orm';
+import { asc, desc, eq, inArray, sql } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { db, type Executor } from '../../db/client.js';
-import { branches, coupons, levels, products, rewards, shopSettings } from '../../db/schema.js';
+import { adminAudit, branches, coupons, users, levels, products, rewards, shopSettings } from '../../db/schema.js';
 import { badRequest, isUniqueViolation, notFound } from '../../lib/errors.js';
 import { resolveMapsLink } from '../../lib/geo.js';
 import { mapsUsageThisMonth } from '../../services/mapsBudget.js';
@@ -173,6 +173,17 @@ export async function adminLoyaltyRoutes(app: FastifyInstance) {
     const pin = await resolveMapsLink(input).catch(() => null);
     if (!pin) throw badRequest('location_not_found', tr('err.location_lookup'));
     return { pin };
+  });
+
+  // ---------- Activity log (who changed what in the dashboard) ----------
+  app.get('/audit', { preHandler: guard.admin }, async () => {
+    const rows = await db
+      .select({ id: adminAudit.id, method: adminAudit.method, path: adminAudit.path, status: adminAudit.status, at: adminAudit.createdAt, name: users.firstName })
+      .from(adminAudit)
+      .leftJoin(users, eq(users.id, adminAudit.userId))
+      .orderBy(desc(adminAudit.id))
+      .limit(100);
+    return { entries: rows };
   });
 
   // ---------- Branches (the shop's stores) ----------

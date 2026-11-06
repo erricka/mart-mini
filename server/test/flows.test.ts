@@ -1029,3 +1029,23 @@ describe('Branches', () => {
     expect(last.json.error.code).toBe('last_branch');
   });
 });
+
+describe('Security: admin activity log and rate limits', () => {
+  it('records every dashboard change (who, what, result) and only admins can read it', async () => {
+    const before = (await call('GET', '/api/admin/audit', adminToken)).json.entries.length;
+    const [cat] = await db.select().from(categories).limit(1);
+    await call('POST', '/api/admin/products', adminToken, { categoryId: cat.id, name: 'Audited', priceCents: 100 });
+    const after = await call('GET', '/api/admin/audit', adminToken);
+    expect(after.json.entries.length).toBe(Math.min(before + 1, 100));
+    expect(after.json.entries[0]).toMatchObject({ method: 'POST', path: '/api/admin/products', status: 201, name: 'Owner' });
+    const staff = await onboard({ id: 9970, first_name: 'Nosy' }, '+85512997000');
+    await db.update(users).set({ role: 'staff' }).where(eq(users.id, staff.user.id));
+    expect((await call('GET', '/api/admin/audit', staff.token)).status).toBe(403);
+  });
+
+  it('limits bursts on every API route', async () => {
+    let limited = 0;
+    for (let i = 0; i < 305; i++) if ((await call('GET', '/api/shop')).status === 429) limited++;
+    expect(limited).toBeGreaterThan(0);
+  });
+});
