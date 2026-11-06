@@ -114,6 +114,7 @@ export function OrderPage() {
 
       <Card className="space-y-1 text-sm">
         <h2 className="mb-1 text-base font-bold">{o.fulfillmentType === 'delivery' ? t('order.delivery_to') : t('order.pickup_at')}</h2>
+        {o.branchName && <div className="font-semibold text-brand">{o.branchName}</div>}
         {o.address ? (
           <>
             <div className="font-semibold">{[o.address.line1, o.address.line2].filter(Boolean).join(', ')}</div>

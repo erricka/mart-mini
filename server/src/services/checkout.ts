@@ -29,6 +29,7 @@ import { kickNotifications, queueNotification } from './notifications.js';
 import { notifyStaffNewOrder } from './orders.js';
 import { calculateQuote, type Quote } from './pricing.js';
 import { getLevels, getSettings, levelFor } from './settings.js';
+import { activeBranches, chooseBranch, pricedFrom, withDistances, type BranchWithDistance } from './branches.js';
 
 export const latLngSchema = z.object({ lat: z.number().min(-90).max(90), lng: z.number().min(-180).max(180) });
 
@@ -37,8 +38,10 @@ export const cartSchema = z.object({
     .array(z.object({ productId: z.number().int().positive(), quantity: z.number().int().min(1).max(99) }))
     .max(100),
   fulfillmentType: z.enum(['delivery', 'pickup']),
-  /** Customer's map pin for delivery (drives the distance-based fee). */
+  /** Customer's map pin: drives the distance-based fee (delivery) and finds the nearest branch. */
   location: latLngSchema.optional().nullable(),
+  /** Branch picked by the customer; omitted = the nearest one (or the first without a pin). */
+  branchId: z.number().int().positive().optional().nullable(),
   /** "same_day" (priced by distance) or "next_day" (I can wait until tomorrow). */
   deliverySpeed: z.enum(['same_day', 'next_day']).optional().default('same_day'),
   /** The customer has entered/chosen a delivery address (flat-fee mode needs one before quoting a fee). */
@@ -165,7 +168,9 @@ export async function quoteCart(user: User, input: CartInput) {
   const byId = new Map(rows.map((p) => [p.id, { ...p, name: pick(p.name, p.nameEn) }]));
   if (discount.coupon) discount.coupon = { ...discount.coupon, title: pick(discount.coupon.title, discount.coupon.titleEn) };
   const level = levelFor(allLevels, user.pointsBalance).current;
-  const quote = buildQuote(input, byId, settings, discount, level.multiplierPercent, {
+  const branchList = withDistances(await activeBranches(settings), input.location ?? null);
+  const branch = chooseBranch(branchList, input.branchId);
+  const quote = buildQuote(input, byId, pricedFrom(settings, branch), discount, level.multiplierPercent, {
     destination: input.location ?? null,
     addressReady: input.addressReady ?? false,
     requireLocation: false,
@@ -180,8 +185,13 @@ export async function quoteCart(user: User, input: CartInput) {
     currency: settings.currency,
     level: { name: level.name, emoji: level.emoji, multiplierPercent: level.multiplierPercent },
     nextDayDate: cambodiaDate(new Date(), 1),
+    /** The branch this order would come from / be collected at, and every branch to choose from. */
+    branch: branchView(branch),
+    branches: branchList.map(branchView),
   };
 }
+
+const branchView = (b: BranchWithDistance) => ({ id: b.id, name: b.name, address: b.address, hours: b.hours, pin: b.pin, distanceKm: b.distanceKm });
 
 async function findOrderByKey(userId: number, key: string) {
   const [o] = await db
@@ -270,7 +280,9 @@ export async function placeOrder(user: User, input: PlaceOrderInput): Promise<{ 
       if (missing.length) throw conflict('product_unavailable', tr('err.items_gone'), { missing });
 
       const level = levelFor(allLevels, u.pointsBalance).current;
-      const quote = buildQuote(input, byId, settings, discount, level.multiplierPercent, {
+      // The branch: the one picked, or the nearest to the customer's pin.
+      const branch = chooseBranch(withDistances(await activeBranches(settings, tx), destination ?? input.location ?? null), input.branchId);
+      const quote = buildQuote(input, byId, pricedFrom(settings, branch), discount, level.multiplierPercent, {
         destination,
         addressReady: address != null,
         requireLocation: true,
@@ -324,6 +336,8 @@ export async function placeOrder(user: User, input: PlaceOrderInput): Promise<{ 
           deliverySpeed: quote.delivery?.speed ?? null,
           deliveryDate: quote.delivery?.speed === 'next_day' ? cambodiaDate(now, 1) : null,
           customerNote: input.note || null,
+          branchId: branch.id,
+          branchName: branch.id != null ? branch.name : null,
           pointsEstimate: quote.pointsEstimate,
         })
         .returning();

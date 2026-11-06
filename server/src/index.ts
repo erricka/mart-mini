@@ -9,6 +9,7 @@ import { seedStarter } from './db/seed.js';
 import { configureBot } from './services/bot.js';
 import { importDiskPhotos } from './services/media.js';
 import { runMaintenance } from './services/maintenance.js';
+import { ensureBranchLocations } from './services/branches.js';
 import { ensureStoreLocation } from './services/settings.js';
 import { dispatchPending, startNotificationWorker } from './services/notifications.js';
 
@@ -36,6 +37,8 @@ const stopBot = await configureBot(app.log).catch((err) => {
 void dispatchPending();
 // Reads the store's Google Maps link into a pin the first time (needs internet; never blocks start-up).
 void ensureStoreLocation(app.log);
+// Branches added with a Google Maps link get their pin from the link.
+void ensureBranchLocations(app.log);
 // Photos uploaded before they were stored in the database (old /uploads disk) → database.
 await importDiskPhotos(app.log);
 

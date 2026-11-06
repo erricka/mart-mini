@@ -15,15 +15,17 @@ import type { DeliverySpeed, LatLng, Quote } from '../../lib/types';
 export function useCartQuote(
   fulfillmentType: 'delivery' | 'pickup',
   discount: { couponCode?: string | null; customerRewardId?: number | null } = {},
-  delivery: { location?: LatLng | null; deliverySpeed?: DeliverySpeed; addressReady?: boolean } = {},
+  delivery: { location?: LatLng | null; deliverySpeed?: DeliverySpeed; addressReady?: boolean; branchId?: number | null } = {},
 ) {
   const lines = useCart((s) => s.lines);
   const items = lines.map((l) => ({ productId: l.productId, quantity: l.quantity }));
-  const location = fulfillmentType === 'delivery' ? (delivery.location ?? null) : null;
+  // The pin also finds the nearest branch (for pickup too).
+  const location = delivery.location ?? null;
+  const branchId = delivery.branchId ?? null;
   const deliverySpeed = delivery.deliverySpeed ?? 'same_day';
   const addressReady = fulfillmentType === 'delivery' && !!delivery.addressReady;
   return useQuery({
-    queryKey: ['quote', items, fulfillmentType, discount.couponCode ?? null, discount.customerRewardId ?? null, location?.lat, location?.lng, deliverySpeed, addressReady],
+    queryKey: ['quote', items, fulfillmentType, discount.couponCode ?? null, discount.customerRewardId ?? null, location?.lat, location?.lng, deliverySpeed, addressReady, branchId],
     enabled: items.length > 0,
     // The previous quote stays visible while recalculating, but screens must treat it as stale
     // (isPlaceholderData / isFetching) — never place an order with it.
@@ -32,7 +34,7 @@ export function useCartQuote(
     staleTime: 0,
     queryFn: () =>
       api<{ quote: Quote; discounts: { wallet: any[]; publicCoupons: any[] } }>('/checkout/quote', {
-        body: { items, fulfillmentType, ...discount, location, deliverySpeed, addressReady },
+        body: { items, fulfillmentType, ...discount, location, deliverySpeed, addressReady, branchId },
       }),
   });
 }

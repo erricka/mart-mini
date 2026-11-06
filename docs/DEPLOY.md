@@ -227,7 +227,18 @@ You can change every number in **Dashboard → ការកំណត់ (Setting
 
 **Which map.** With a Google Maps key (next section), customers get **Google Maps**, and moving the pin **fills in the address automatically**: street, sangkat, khan and city. They add their house number or floor. Without a key, or if Google can't load, the app uses the free [OpenStreetMap](https://www.openstreetmap.org/copyright) map. That map has no auto-fill and no bill. Dashboard → Settings shows which one is active.
 
-## Google Maps (address auto-fill)
+## Branches (more than one store)
+
+Dashboard → **Settings → Branches** lists your stores. Each has a name (Khmer and English), an address and opening hours (shown to pickup customers), and a map pin: paste the branch's Google Maps link and tap **Find**, or move the map.
+
+- **Delivery** is priced from the branch nearest the customer's pin. Checkout shows "From <branch> · 2.1 km" and the customer can pick another branch (the fee updates).
+- **Pickup:** customers choose the branch to collect from. Branches are listed with their distance and the nearest one is marked; a button finds the nearest from their location.
+- Every order records its branch. It appears in the order list and order details, and in the staff Telegram alert.
+- A closed branch is hidden from customers. Keep at least one branch open.
+
+Your first store became **branch 1**. The second mart was added as **branch 2** from its Google Maps link, and the server reads its pin from the link when it starts. Add its address in Settings → Branches.
+
+
 
 About 10 minutes. Google requires a billing account, but a small shop normally stays inside the free monthly usage. Since March 2025 that is 10,000 map loads and 10,000 address look-ups per month. Check [Google Maps Platform pricing](https://mapsplatform.google.com/pricing/) for current numbers.
 

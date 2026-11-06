@@ -12,6 +12,7 @@ import { idParam, parse } from '../lib/validate.js';
 import { makeGuards, signOnboarding, signSession } from '../plugins/auth.js';
 import { completeOnboarding, consumeStaffLoginToken, publicUser, resolveTelegramIdentity } from '../services/identity.js';
 import { loyaltyOverview, loyaltyTeaser } from '../services/loyalty.js';
+import { activeBranches } from '../services/branches.js';
 import { getSettings } from '../services/settings.js';
 
 export function publicProduct(p: Product) {
@@ -131,6 +132,8 @@ export async function publicRoutes(app: FastifyInstance) {
   // ---------- Shop & catalog (public) ----------
   app.get('/shop', async () => {
     const s = await getSettings();
+    const list = await activeBranches(s);
+    const located = list.filter((b) => b.pin);
     return {
       shopName: s.shopName,
       tagline: pick(s.tagline, s.taglineEn),
@@ -140,8 +143,10 @@ export async function publicRoutes(app: FastifyInstance) {
       deliveryFeeCents: s.deliveryFeeCents,
       freeDeliveryMinCents: s.freeDeliveryMinCents,
       // Distance pricing: the store pin is public (it's the shop), so the map can centre on it.
-      deliveryPricing: s.deliveryPricing === 'distance' && s.storeLat != null && s.storeLng != null ? 'distance' : 'flat',
-      store: s.storeLat != null && s.storeLng != null ? { lat: s.storeLat, lng: s.storeLng } : null,
+      deliveryPricing: s.deliveryPricing === 'distance' && located.length > 0 ? 'distance' : 'flat',
+      store: located[0]?.pin ?? null,
+      // Every branch (the customer picks one, or the nearest is used).
+      branches: list.map((b) => ({ id: b.id, name: b.name, address: b.address, hours: b.hours, pin: b.pin })),
       deliveryMinFeeCents: s.deliveryMinFeeCents,
       deliveryMaxKm: s.deliveryMaxKm,
       nextDayEnabled: s.nextDayEnabled,
@@ -149,8 +154,8 @@ export async function publicRoutes(app: FastifyInstance) {
       // Browser key (restricted to this site in Google Cloud). Null → OpenStreetMap without address auto-fill.
       mapsApiKey: config.GOOGLE_MAPS_API_KEY || null,
       minOrderCents: s.minOrderCents,
-      pickupAddress: s.pickupAddress,
-      pickupHours: s.pickupHours,
+      pickupAddress: list[0]?.address ?? s.pickupAddress,
+      pickupHours: list[0]?.hours ?? s.pickupHours,
       supportPhone: s.supportPhone,
       devLoginEnabled: config.devLoginEnabled,
       telegramConfigured: config.telegramConfigured,

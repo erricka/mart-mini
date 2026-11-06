@@ -151,6 +151,7 @@ export function OrdersPage({ counts }: { counts?: { newCount: number; activeCoun
                   </div>
                   <div className="mt-1 text-sm">
                     {o.contactName} · {o.fulfillmentType === 'delivery' ? (o.city ?? t('co.delivery')) : t('co.pickup')} · {t('ao.items', { n: o.itemCount ?? 0 })}
+                    {o.branchName && <span className="text-muted"> · {o.branchName}</span>}
                   </div>
                   {o.deliverySpeed === 'next_day' && (
                     <div className="mt-1 text-xs font-bold text-sky-700 dark:text-sky-300">
@@ -246,7 +247,10 @@ export function OrderDetailPage() {
             <Badge className={STATUS_META[o.status].tone}>{statusLabel(o.status)}</Badge>
             <Badge className={PAYMENT_TONE[o.paymentStatus]}>{t(`pay.${o.paymentStatus}` as TKey)}</Badge>
           </div>
-          <p className="text-sm text-muted">{t('ao.placed_meta', { date: dateTime(o.placedAt), type, n: o.itemCount ?? 0 })}</p>
+          <p className="text-sm text-muted">
+            {t('ao.placed_meta', { date: dateTime(o.placedAt), type, n: o.itemCount ?? 0 })}
+            {o.branchName && <span className="font-semibold text-brand"> · {o.branchName}</span>}
+          </p>
         </div>
         <div className="flex flex-wrap gap-2">
           {forward.slice(0, 1).map((s) => (

@@ -10,11 +10,11 @@
  * Everything entered is kept (session draft) when going back to the basket or retrying.
  */
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { Banknote, Building2, CalendarDays, Check, ChevronDown, Clock, Gift, House, MapPin, Plus, Star, Store, Ticket, Truck, type LucideIcon } from 'lucide-react';
+import { Banknote, Building2, LocateFixed, CalendarDays, Check, ChevronDown, Clock, Gift, House, MapPin, Plus, Star, Store, Ticket, Truck, type LucideIcon } from 'lucide-react';
 import { lazy, Suspense, useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react';
 import { Link, Navigate, useNavigate } from 'react-router-dom';
 import { metresBetween } from '../../components/maps/shared';
-import { Button, cx, Field, Input, Notice, Skeleton, Spinner, Textarea } from '../../components/ui';
+import { Button, cx, Field, Input, Notice, Sheet, Skeleton, Spinner, Textarea } from '../../components/ui';
 import { api, ApiError, errorMessage } from '../../lib/api';
 import { useCart } from '../../lib/cart';
 import { useCheckoutDraft, EMPTY_ADDRESS, type Discount } from '../../lib/checkoutDraft';
@@ -23,9 +23,9 @@ import type { GeoAddress } from '../../lib/googleMaps';
 import { useT } from '../../lib/i18n';
 import { useAddresses, useShop } from '../../lib/queries';
 import { useSession } from '../../lib/session';
-import { canRequestContact, haptic, requestTelegramContact } from '../../lib/telegram';
+import { canRequestContact, getCurrentLocation, haptic, requestTelegramContact } from '../../lib/telegram';
 import { toast } from '../../lib/toast';
-import type { Address, CouponInfo, LatLng, OrderDetail, User, WalletItem } from '../../lib/types';
+import type { Address, BranchInfo, CouponInfo, LatLng, OrderDetail, User, WalletItem } from '../../lib/types';
 import { useCartQuote } from './Cart';
 
 const MapPicker = lazy(() => import('../../components/MapPicker'));
@@ -63,6 +63,7 @@ export function Checkout() {
   const set = d.set;
   const [codeInput, setCodeInput] = useState('');
   const [offersOpen, setOffersOpen] = useState(false);
+  const [branchSheet, setBranchSheet] = useState(false);
   const [attempted, setAttempted] = useState(false);
   const [serverErrors, setServerErrors] = useState<Partial<Record<FieldKey, string>>>({});
   // Set synchronously on success so clearing the cart doesn't trigger the empty-cart redirect.
@@ -100,8 +101,15 @@ export function Checkout() {
     () => (d.discount?.kind === 'reward' ? { customerRewardId: d.discount.id } : d.discount?.kind === 'code' ? { couponCode: d.discount.code } : {}),
     [d.discount],
   );
-  const quoteQ = useCartQuote(d.fulfillment, discountParams, { location: delivery ? d.pin : null, deliverySpeed: d.speed, addressReady });
+  const quoteQ = useCartQuote(d.fulfillment, discountParams, { location: d.pin, deliverySpeed: d.speed, addressReady, branchId: d.branchId });
   const q = quoteQ.data?.quote;
+  // Branches to choose from (with distances once the customer's pin is known).
+  const branchList = q?.branches ?? s?.branches ?? [];
+  const findNearest = async () => {
+    const p = await getCurrentLocation();
+    if (p) set({ pin: { lat: p.lat, lng: p.lng }, branchId: null });
+    else haptic('error');
+  };
   const wallet: WalletItem[] = quoteQ.data?.discounts.wallet ?? [];
   const publicCoupons: CouponInfo[] = quoteQ.data?.discounts.publicCoupons ?? [];
   // Anything shown while a new calculation runs is stale: show loading and block the order.
@@ -145,6 +153,8 @@ export function Checkout() {
           contactPhone: d.contactPhone.trim(),
           addressId: delivery && !d.addingAddress ? d.addressId : null,
           location: delivery ? d.pin : null,
+          // The branch the customer saw (picked, or the nearest one).
+          branchId: d.branchId ?? q?.branch?.id ?? null,
           deliverySpeed: d.speed,
           address:
             delivery && d.addingAddress
@@ -366,20 +376,15 @@ export function Checkout() {
           />
         </div>
         {!delivery && s && (
-          <div className="mt-3 space-y-1.5 text-sm">
-            {s.pickupAddress && (
-              <div className="flex items-start gap-2 font-semibold">
-                <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-muted" />
-                {s.pickupAddress}
-              </div>
+          <div className="mt-3 space-y-2">
+            <BranchChoice branches={branchList} selectedId={q?.branch?.id ?? d.branchId} onPick={(id) => set({ branchId: id })} />
+            {branchList.length > 1 && !d.pin && (
+              <button className="flex items-center gap-1.5 text-sm font-semibold text-brand" onClick={findNearest}>
+                <LocateFixed className="h-4 w-4" />
+                {t('co.find_nearest')}
+              </button>
             )}
-            {s.pickupHours && (
-              <div className="flex items-start gap-2 text-muted">
-                <Clock className="mt-0.5 h-4 w-4 shrink-0" />
-                {s.pickupHours}
-              </div>
-            )}
-            <div className="text-muted">{t('co.pickup_msg')}</div>
+            <div className="text-sm text-muted">{t('co.pickup_msg')}</div>
           </div>
         )}
       </section>
@@ -418,7 +423,7 @@ export function Checkout() {
                 <div className="pt-2">
                   <div className="mb-2 text-sm font-semibold">{t('co.pin_title')}</div>
                   <Suspense fallback={<Skeleton className="h-[260px] rounded-xl" />}>
-                    <MapPicker value={d.pin} onChange={onPinChange} store={s?.store} hint={t('co.pin_hint')} onAddress={d.addingAddress ? onMapAddress : undefined} />
+                    <MapPicker value={d.pin} onChange={onPinChange} store={q?.branch?.pin ?? s?.store} hint={t('co.pin_hint')} onAddress={d.addingAddress ? onMapAddress : undefined} />
                   </Suspense>
                 </div>
               )}
@@ -433,6 +438,20 @@ export function Checkout() {
                 onRetry={() => void quoteQ.refetch()}
                 onPickup={s?.pickupEnabled ? () => set({ fulfillment: 'pickup' }) : undefined}
               />
+
+              {/* Which branch delivers (nearest by default; the customer can pick another). */}
+              {branchList.length > 1 && q?.branch && (
+                <div className="flex items-center gap-2 rounded-xl bg-surface-2 px-3 py-2.5 text-sm">
+                  <Store className="h-4 w-4 shrink-0 text-brand" />
+                  <span className="min-w-0 flex-1 truncate">
+                    {t('co.from_branch', { name: q.branch.name })}
+                    {q.branch.distanceKm != null && <span className="text-muted"> · {t('co.km_away', { km: q.branch.distanceKm })}</span>}
+                  </span>
+                  <button className="shrink-0 font-semibold text-brand" onClick={() => setBranchSheet(true)}>
+                    {t('co.change')}
+                  </button>
+                </div>
+              )}
 
               {d.addingAddress && (
                 <div className="space-y-3 border-t border-line pt-3">
@@ -679,6 +698,30 @@ export function Checkout() {
         )}
       </section>
 
+      <Sheet open={branchSheet} onClose={() => setBranchSheet(false)} title={t('co.branch_title')}>
+        <div className="space-y-2">
+          <button
+            onClick={() => {
+              set({ branchId: null });
+              setBranchSheet(false);
+            }}
+            className={cx('flex w-full items-center gap-3 rounded-xl p-3 text-left ring-1', d.branchId == null ? 'bg-brand/5 ring-2 ring-brand' : 'ring-line')}
+          >
+            <LocateFixed className="h-5 w-5 shrink-0 text-brand" />
+            <span className="flex-1 font-semibold">{t('co.nearest_auto')}</span>
+            <Radio on={d.branchId == null} />
+          </button>
+          <BranchChoice
+            branches={branchList}
+            selectedId={d.branchId}
+            onPick={(id) => {
+              set({ branchId: id });
+              setBranchSheet(false);
+            }}
+          />
+        </div>
+      </Sheet>
+
       {/* One primary action, never active with a pending or stale fee. */}
       <div className="pb-safe fixed inset-x-0 bottom-0 z-40 border-t border-line bg-surface">
         <div className="mx-auto max-w-xl px-4 py-3">
@@ -854,5 +897,62 @@ function Radio({ on }: { on: boolean }) {
     <span className={cx('mt-0.5 grid h-5 w-5 shrink-0 place-items-center rounded-full ring-2', on ? 'bg-brand ring-brand' : 'ring-line')}>
       {on && <Check className="h-3 w-3 text-white" strokeWidth={3} />}
     </span>
+  );
+}
+
+/** The shop's branches as choices: name, address, hours, distance; the nearest one is marked. */
+function BranchChoice({ branches, selectedId, onPick }: { branches: BranchInfo[]; selectedId: number | null | undefined; onPick: (id: number | null) => void }) {
+  const { t } = useT();
+  const nearest = branches.filter((b) => b.distanceKm != null).sort((a, b) => a.distanceKm! - b.distanceKm!)[0];
+  if (branches.length === 1) {
+    const b = branches[0];
+    return (
+      <div className="space-y-1.5 text-sm">
+        {b.address && (
+          <div className="flex items-start gap-2 font-semibold">
+            <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-muted" />
+            {b.address}
+          </div>
+        )}
+        {b.hours && (
+          <div className="flex items-start gap-2 text-muted">
+            <Clock className="mt-0.5 h-4 w-4 shrink-0" />
+            {b.hours}
+          </div>
+        )}
+      </div>
+    );
+  }
+  return (
+    <div className="space-y-2">
+      {branches.map((b) => {
+        const on = b.id === selectedId;
+        return (
+          <button
+            key={b.id ?? 0}
+            onClick={() => {
+              haptic('select');
+              onPick(b.id);
+            }}
+            className={cx('flex w-full items-start gap-3 rounded-xl p-3 text-left ring-1 transition', on ? 'bg-brand/5 ring-2 ring-brand' : 'ring-line')}
+          >
+            <Store className={cx('mt-0.5 h-5 w-5 shrink-0', on ? 'text-brand' : 'text-muted')} />
+            <span className="min-w-0 flex-1">
+              <span className="flex flex-wrap items-center gap-x-2 font-semibold">
+                {b.name}
+                {nearest && nearest.id === b.id && branches.length > 1 && (
+                  <span className="rounded-full bg-brand/10 px-2 py-0.5 text-xs font-semibold text-brand">{t('co.nearest_badge')}</span>
+                )}
+              </span>
+              {b.address && <span className="block text-sm text-muted">{b.address}</span>}
+              <span className="block text-xs text-muted">
+                {[b.hours, b.distanceKm != null ? t('co.km_away', { km: b.distanceKm }) : null].filter(Boolean).join(' · ')}
+              </span>
+            </span>
+            <Radio on={on} />
+          </button>
+        );
+      })}
+    </div>
   );
 }

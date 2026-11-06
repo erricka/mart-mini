@@ -22,6 +22,8 @@ export interface CheckoutDraft {
   newAddress: NewAddress;
   pin: LatLng | null;
   speed: DeliverySpeed;
+  /** Branch picked by the customer; null = the nearest one. */
+  branchId: number | null;
   contactName: string;
   contactPhone: string;
   note: string;
@@ -39,6 +41,7 @@ const fresh = (ownerId: number | null, contactName = '', contactPhone = ''): Che
   newAddress: EMPTY_ADDRESS,
   pin: null,
   speed: 'same_day',
+  branchId: null,
   contactName,
   contactPhone,
   note: '',

@@ -64,6 +64,13 @@
       "when": 1793865989267,
       "tag": "0008_product_delete",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1793963836418,
+      "tag": "0009_branches",
+      "breakpoints": true
     }
   ]
 }

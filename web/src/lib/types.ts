@@ -51,6 +51,16 @@ export interface DeliveryInfo {
   message: string | null;
 }
 
+/** One of the shop's stores. distanceKm: road km to the customer's pin (quotes only). */
+export interface BranchInfo {
+  id: number | null;
+  name: string;
+  address: string;
+  hours: string;
+  pin: LatLng | null;
+  distanceKm?: number | null;
+}
+
 export interface Shop {
   shopName: string;
   tagline: string;
@@ -63,6 +73,7 @@ export interface Shop {
   /** 'distance' only when the store pin is known. */
   deliveryPricing: 'distance' | 'flat';
   store: LatLng | null;
+  branches: BranchInfo[];
   deliveryMinFeeCents: number;
   deliveryMaxKm: number | null;
   nextDayEnabled: boolean;
@@ -209,6 +220,9 @@ export interface Quote {
   minOrderRemainingCents: number;
   delivery: DeliveryInfo | null;
   nextDayDate: string;
+  /** The branch the order comes from / is collected at, and all branches with distances. */
+  branch: BranchInfo;
+  branches: BranchInfo[];
   issues: string[];
   canPlace: boolean;
   missingProductIds: number[];
@@ -240,6 +254,8 @@ export interface OrderSummary {
   id: number;
   code: string;
   status: OrderStatus;
+  /** The branch the order is from / collected at (null before branches existed). */
+  branchName: string | null;
   statusLabel: string;
   paymentStatus: PaymentStatus;
   paymentMethod: PaymentMethod;

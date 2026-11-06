@@ -8,6 +8,7 @@ import { useT } from '../../lib/i18n';
 import { toast } from '../../lib/toast';
 import { useShop } from '../../lib/queries';
 import type { LatLng } from '../../lib/types';
+import { BranchesManager } from './Branches';
 import { type LoyaltyData, PageHeader, settingsPayload, useIsAdmin, useLoyalty } from './common';
 
 const MapPicker = lazy(() => import('../../components/MapPicker'));
@@ -162,12 +163,7 @@ function SettingsForm({ data }: { data: LoyaltyData }) {
         <div className="sm:col-span-2">
           <Toggle checked={f.pickupEnabled} onChange={(v) => !d && set('pickupEnabled', v)} label={t('as.offer_pickup')} />
         </div>
-        <Field label={t('as.pickup_point')}>
-          <Input disabled={d || !f.pickupEnabled} value={f.pickupAddress} onChange={(e) => set('pickupAddress', e.target.value)} />
-        </Field>
-        <Field label={t('as.pickup_hours')}>
-          <Input disabled={d || !f.pickupEnabled} value={f.pickupHours} onChange={(e) => set('pickupHours', e.target.value)} />
-        </Field>
+<p className="text-sm text-muted">{t('as.pickup_at_branches')}</p>
       </Card>
 
       {f.deliveryEnabled && (
@@ -185,28 +181,7 @@ function SettingsForm({ data }: { data: LoyaltyData }) {
             </p>
           )}
 
-          <div className="space-y-2">
-            <div className="font-semibold">{t('as.dm_store')}</div>
-            <p className="text-sm text-muted">{t('as.dm_store_hint')}</p>
-            {!storePin && <Notice tone="warn">{t('as.dm_no_store')}</Notice>}
-            <div className="flex gap-2">
-              <Input disabled={d} value={f.storeMapsUrl} onChange={(e) => set('storeMapsUrl', e.target.value)} placeholder={t('as.dm_paste')} />
-              <Button variant="secondary" disabled={d || f.storeMapsUrl.trim().length < 3} loading={locate.isPending} onClick={() => locate.mutate()}>
-                {t('as.dm_find')}
-              </Button>
-            </div>
-            <Suspense fallback={<Skeleton className="h-[300px] rounded-2xl" />}>
-              <MapPicker value={storePin} onChange={(p) => !d && setStorePin(p)} pinEmoji="🏪" height={300} hint={t('as.dm_store_hint')} />
-            </Suspense>
-            {storePin && (
-              <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted">
-                <span className="tabular-nums">📍 {storePin.lat.toFixed(6)}, {storePin.lng.toFixed(6)}</span>
-                <a className="font-semibold text-brand" target="_blank" rel="noreferrer" href={`https://www.google.com/maps/search/?api=1&query=${storePin.lat},${storePin.lng}`}>
-                  {t('as.dm_check')}
-                </a>
-              </div>
-            )}
-          </div>
+          <BranchesManager canEdit={isAdmin} />
 
           {f.byDistance && (
             <>

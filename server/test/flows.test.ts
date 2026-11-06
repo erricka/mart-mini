@@ -957,3 +957,61 @@ describe('One-off clean-up of 5 Nov 2026', () => {
     expect(created.json.category.emoji).toBe('🗑️');
   });
 });
+
+describe('Branches', () => {
+  const A = { lat: 11.5564, lng: 104.9282 }; // central Phnom Penh
+  const B = { lat: 11.6200, lng: 104.8900 }; // ~8 km north-west
+  const nearB = { lat: 11.6150, lng: 104.8920 };
+  let token: string;
+  let a: number;
+  let b: number;
+  let soapId: number;
+
+  beforeAll(async () => {
+    const [cat] = await db.insert(categories).values({ name: 'Branch test', slug: 'branch-test' }).returning();
+    soapId = (await db.insert(products).values({ categoryId: cat.id, name: 'Soap', priceCents: 500, stock: 50 }).returning())[0].id;
+    await db.update(shopSettings).set({ deliveryPricing: 'distance', deliveryEnabled: true, pickupEnabled: true });
+    token = (await onboard({ id: 9960, first_name: 'Branchy' }, '+85512996000')).token;
+    const ra = await call('POST', '/api/admin/branches', adminToken, { name: 'Branch A', address: 'St 1, Phnom Penh', hours: '7am–9pm', lat: A.lat, lng: A.lng });
+    const rb = await call('POST', '/api/admin/branches', adminToken, { name: 'Branch B', address: 'St 2, Toul Kork', hours: '8am–8pm', lat: B.lat, lng: B.lng, sortOrder: 1 });
+    expect(ra.status).toBe(201);
+    a = ra.json.branch.id;
+    b = rb.json.branch.id;
+  });
+
+  it('lists the branches publicly', async () => {
+    const shop = await call('GET', '/api/shop');
+    expect(shop.json.branches.map((x: any) => x.name)).toEqual(['Branch A', 'Branch B']);
+    expect(shop.json.store).toEqual(A);
+  });
+
+  it('prices delivery from the nearest branch, or from the one the customer picks', async () => {
+    const items = [{ productId: soapId, quantity: 1 }];
+    const near = await call('POST', '/api/checkout/quote', token, { items, fulfillmentType: 'delivery', location: nearB });
+    expect(near.json.quote.branch).toMatchObject({ id: b, name: 'Branch B' });
+    expect(near.json.quote.branch.distanceKm).toBeLessThan(1.5);
+    expect(near.json.quote.branches).toHaveLength(2);
+    const picked = await call('POST', '/api/checkout/quote', token, { items, fulfillmentType: 'delivery', location: nearB, branchId: a });
+    expect(picked.json.quote.branch.id).toBe(a);
+    expect(picked.json.quote.delivery.distanceKm).toBeGreaterThan(near.json.quote.delivery.distanceKm);
+    expect(picked.json.quote.delivery.sameDayFeeCents).toBeGreaterThan(near.json.quote.delivery.sameDayFeeCents);
+  });
+
+  it('records the branch on the order and shows its pickup address', async () => {
+    const r = await order(token, { fulfillmentType: 'pickup', branchId: b, items: [{ productId: soapId, quantity: 2 }] });
+    expect(r.json.error ?? null).toBeNull();
+    expect(r.status).toBe(201);
+    const detail = await call('GET', `/api/orders/${r.json.order.id}`, token);
+    expect(detail.json.order).toMatchObject({ branchName: 'Branch B', pickup: { address: 'St 2, Toul Kork', hours: '8am–8pm' } });
+  });
+
+  it('is managed by admins, and the last open branch cannot be removed', async () => {
+    const staff = await onboard({ id: 9961, first_name: 'Staff B' }, '+85512996001');
+    await db.update(users).set({ role: 'staff' }).where(eq(users.id, staff.user.id));
+    expect((await call('POST', '/api/admin/branches', staff.token, { name: 'Nope' })).status).toBe(403);
+    expect((await call('DELETE', `/api/admin/branches/${a}`, adminToken)).status).toBe(200);
+    const last = await call('DELETE', `/api/admin/branches/${b}`, adminToken);
+    expect(last.status).toBe(400);
+    expect(last.json.error.code).toBe('last_branch');
+  });
+});

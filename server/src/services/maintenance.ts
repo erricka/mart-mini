@@ -3,11 +3,11 @@
  * Each task is recorded in `maintenance_runs` (with what it did), so it never runs twice — even when
  * two server instances start at the same time. A failing task changes nothing and retries next start.
  */
-import { and, eq, gte, inArray, lt } from 'drizzle-orm';
+import { and, asc, eq, gte, inArray, lt } from 'drizzle-orm';
 import type { FastifyBaseLogger } from 'fastify';
 import { config } from '../config.js';
 import { db, type Tx } from '../db/client.js';
-import { categories, maintenanceRuns, products } from '../db/schema.js';
+import { branches, categories, maintenanceRuns, products } from '../db/schema.js';
 import { deleteProductsTx } from './catalogDelete.js';
 import { DEFAULT_EMOJI, guessCategoryEmoji } from './categoryEmoji.js';
 
@@ -67,7 +67,29 @@ const categoryEmojis20261106: Task = {
   },
 };
 
-export const TASKS: Task[] = [cleanup20261105, categoryEmojis20261106];
+/** 6 Nov 2026: the owner's second mart, from its Google Maps link (the pin is read from the link at start-up). */
+const secondBranch20261106: Task = {
+  name: 'second-branch-2026-11-06',
+  run: async (tx) => {
+    const url = 'https://maps.app.goo.gl/z3yTnwv4H9q4L4fj8';
+    const existing = await tx.select().from(branches).orderBy(asc(branches.sortOrder), asc(branches.id));
+    if (existing.some((b) => b.mapsUrl?.includes('z3yTnwv4H9q4L4fj8'))) return { added: false };
+    const first = existing[0];
+    const [b] = await tx
+      .insert(branches)
+      .values({
+        name: 'mart25 — សាខា ២',
+        nameEn: 'mart25 — Branch 2',
+        hours: first?.hours ?? '',
+        mapsUrl: url,
+        sortOrder: (existing.at(-1)?.sortOrder ?? 0) + 1,
+      })
+      .returning();
+    return { added: true, id: b.id };
+  },
+};
+
+export const TASKS: Task[] = [cleanup20261105, categoryEmojis20261106, secondBranch20261106];
 
 export async function runMaintenance(log: FastifyBaseLogger, opts: { force?: boolean; only?: string } = {}) {
   if (config.NODE_ENV !== 'production' && !opts.force) return null;

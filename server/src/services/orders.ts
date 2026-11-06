@@ -1,6 +1,7 @@
 import { and, asc, desc, eq, sql } from 'drizzle-orm';
-import { db, type Tx } from '../db/client.js';
+import { db, type Executor, type Tx } from '../db/client.js';
 import {
+  branches,
   couponRedemptions,
   coupons,
   customerRewards,
@@ -58,6 +59,24 @@ export interface Actor {
 }
 
 
+/**
+ * The shop settings as seen from this order's branch: its pickup address, hours and pin stand in for the
+ * single-store ones (orders from before branches, or of a deleted branch, keep the shop settings).
+ */
+async function settingsForOrder(order: Order, ex: Executor = db): Promise<ShopSettings> {
+  const settings = await getSettings(ex);
+  if (order.branchId == null) return settings;
+  const [b] = await ex.select().from(branches).where(eq(branches.id, order.branchId));
+  if (!b) return settings;
+  return {
+    ...settings,
+    pickupAddress: b.address || settings.pickupAddress,
+    pickupHours: b.hours || settings.pickupHours,
+    storeLat: b.lat ?? settings.storeLat,
+    storeLng: b.lng ?? settings.storeLng,
+  };
+}
+
 /** Alerts every staff member (in their own language) about a new order to handle. */
 export async function notifyStaffNewOrder(tx: Tx, orderId: number) {
   const [o] = await tx.select().from(orders).where(eq(orders.id, orderId));
@@ -65,7 +84,7 @@ export async function notifyStaffNewOrder(tx: Tx, orderId: number) {
     .select({ n: sql<number>`coalesce(sum(${orderItems.quantity}),0)::int` })
     .from(orderItems)
     .where(eq(orderItems.orderId, orderId));
-  const settings = await getSettings(tx);
+  const settings = await settingsForOrder(o, tx);
   await notifyStaff(tx, {
     kind: 'staff_new_order',
     text: (lang) =>
@@ -81,7 +100,9 @@ export async function notifyStaffNewOrder(tx: Tx, orderId: number) {
           phone: esc(o.contactPhone),
         },
         lang,
-      ) + deliveryLines(o, settings, lang),
+      ) +
+      (o.branchName ? `\n🏪 ${esc(o.branchName)}` : '') +
+      deliveryLines(o, settings, lang),
     orderId: o.id,
     buttonText: (lang) => tr('n.btn_open_dashboard', {}, lang),
     buttonPath: `/admin/orders/${o.id}`,
@@ -220,7 +241,7 @@ export async function changeOrderStatus(args: {
       actorRole: args.asCustomer ? 'customer' : args.actor.role,
     });
 
-    const settings = await getSettings(tx);
+    const settings = await settingsForOrder(order, tx);
     const [customer] = await tx.select().from(users).where(eq(users.id, order.userId));
     let points = 0;
     if (args.to === 'cancelled') await releaseOrderResources(tx, order, args.actor.id);
@@ -356,6 +377,7 @@ export function serializeOrderSummary(o: Order, itemCount?: number) {
     code: orderCode(o.id),
     status: o.status,
     statusLabel: statusLabel(o.status),
+    branchName: o.branchName,
     paymentStatus: o.paymentStatus,
     paymentMethod: o.paymentMethod,
     fulfillmentType: o.fulfillmentType,
@@ -380,7 +402,7 @@ export async function getOrderDetail(orderId: number, opts: { forUserId?: number
   const [items, events, settings] = await Promise.all([
     db.select().from(orderItems).where(eq(orderItems.orderId, orderId)).orderBy(asc(orderItems.isGift), asc(orderItems.id)),
     db.select().from(orderEvents).where(eq(orderEvents.orderId, orderId)).orderBy(asc(orderEvents.createdAt), asc(orderEvents.id)),
-    getSettings(),
+    settingsForOrder(order),
   ]);
 
   const base = {

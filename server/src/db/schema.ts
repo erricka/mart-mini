@@ -180,6 +180,25 @@ export const inventoryMovements = pgTable(
 );
 
 // ---------- Settings & loyalty configuration ----------
+/**
+ * The shop's stores (branches). Delivery is priced from the branch nearest the customer's pin (or the
+ * one they pick); pickup orders are collected at the branch the customer chose.
+ */
+export const branches = pgTable('branches', {
+  id: serial('id').primaryKey(),
+  name: text('name').notNull(),
+  nameEn: text('name_en'),
+  address: text('address').notNull().default(''),
+  hours: text('hours').notNull().default(''),
+  lat: doublePrecision('lat'),
+  lng: doublePrecision('lng'),
+  /** Google Maps link; resolved to lat/lng by the server when the pin is missing. */
+  mapsUrl: text('maps_url'),
+  active: boolean('active').notNull().default(true),
+  sortOrder: integer('sort_order').notNull().default(0),
+  createdAt: createdAt(),
+});
+
 export const shopSettings = pgTable(
   'shop_settings',
   {
@@ -375,6 +394,9 @@ export const orders = pgTable(
     deliverySpeed: text('delivery_speed'),
     /** Promised delivery date (Cambodia time) for next-day orders. */
     deliveryDate: date('delivery_date', { mode: 'string' }),
+    /** The branch that prepares the order (delivery from / pickup at), and its name at the time. */
+    branchId: integer('branch_id').references(() => branches.id, { onDelete: 'set null' }),
+    branchName: text('branch_name'),
     customerNote: text('customer_note'),
     cancelReason: text('cancel_reason'),
     cancelledBy: text('cancelled_by'),

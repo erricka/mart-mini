@@ -1,8 +1,8 @@
 import { asc, eq, inArray, sql } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { db } from '../../db/client.js';
-import { coupons, levels, products, rewards, shopSettings } from '../../db/schema.js';
+import { db, type Executor } from '../../db/client.js';
+import { branches, coupons, levels, products, rewards, shopSettings } from '../../db/schema.js';
 import { badRequest, isUniqueViolation, notFound } from '../../lib/errors.js';
 import { resolveMapsLink } from '../../lib/geo.js';
 import { mapsUsageThisMonth } from '../../services/mapsBudget.js';
@@ -173,6 +173,70 @@ export async function adminLoyaltyRoutes(app: FastifyInstance) {
     if (!pin) throw badRequest('location_not_found', tr('err.location_lookup'));
     return { pin };
   });
+
+  // ---------- Branches (the shop's stores) ----------
+  const branchInput = z.object({
+    name: z.string().trim().min(1).max(80),
+    nameEn: z.string().trim().max(80).nullable().optional(),
+    address: z.string().trim().max(200).default(''),
+    hours: z.string().trim().max(120).default(''),
+    lat: z.number().min(-90).max(90).nullable().optional(),
+    lng: z.number().min(-180).max(180).nullable().optional(),
+    mapsUrl: z.string().trim().max(500).nullable().optional(),
+    active: z.boolean().default(true),
+    sortOrder: z.number().int().default(0),
+  });
+  /** A Maps link without a pin → read the pin from the link (best effort; the pin can be set on the map). */
+  const withPin = async (b: z.infer<typeof branchInput>) => {
+    if ((b.lat == null) !== (b.lng == null)) throw badRequest('bad_location', tr('err.location_lookup'));
+    if (b.lat == null && b.mapsUrl) {
+      const pin = await resolveMapsLink(b.mapsUrl).catch(() => null);
+      if (pin) return { ...b, lat: pin.lat, lng: pin.lng };
+    }
+    return b;
+  };
+
+  app.get('/branches', { preHandler: guard.staff }, async () => ({
+    branches: await db.select().from(branches).orderBy(asc(branches.sortOrder), asc(branches.id)),
+  }));
+
+  app.post('/branches', { preHandler: guard.admin }, async (req, reply) => {
+    const body = await withPin(parse(branchInput, req.body));
+    const [b] = await db
+      .insert(branches)
+      .values({ ...body, nameEn: body.nameEn || null, mapsUrl: body.mapsUrl || null })
+      .returning();
+    return reply.status(201).send({ branch: b });
+  });
+
+  app.put('/branches/:id', { preHandler: guard.admin }, async (req) => {
+    const { id } = parse(idParam, req.params);
+    const body = await withPin(parse(branchInput, req.body));
+    const [b] = await db
+      .update(branches)
+      .set({ ...body, nameEn: body.nameEn || null, mapsUrl: body.mapsUrl || null })
+      .where(eq(branches.id, id))
+      .returning();
+    if (!b) throw notFound(tr('err.branch_not_found'));
+    if (!b.active) await assertSomeActiveBranch();
+    return { branch: b };
+  });
+
+  app.delete('/branches/:id', { preHandler: guard.admin }, async (req) => {
+    const { id } = parse(idParam, req.params);
+    return db.transaction(async (tx) => {
+      const [b] = await tx.delete(branches).where(eq(branches.id, id)).returning();
+      if (!b) throw notFound(tr('err.branch_not_found'));
+      // Past orders keep the branch name they were placed with.
+      await assertSomeActiveBranch(tx);
+      return { deleted: true };
+    });
+  });
+
+  async function assertSomeActiveBranch(ex: Executor = db) {
+    const [{ n }] = await ex.select({ n: sql<number>`count(*)::int` }).from(branches).where(eq(branches.active, true));
+    if (n === 0) throw badRequest('last_branch', tr('err.last_branch'));
+  }
 
   app.put('/levels', { preHandler: guard.admin }, async (req) => {
     const body = parse(levelsInput, req.body);
