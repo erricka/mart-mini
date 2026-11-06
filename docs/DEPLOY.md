@@ -14,7 +14,7 @@ You need:
 - a [Render](https://dashboard.render.com/register) account (sign up with GitHub). The app runs on Render's **free** plan.
 - a [Neon](https://console.neon.tech/signup) account for the database. The free plan has no expiry and needs no card.
 
-**Cost: $0.** On Render's free plan the app sleeps after 15 minutes without visitors, and the next visitor waits about a minute while it wakes. Telegram resends bot messages while it wakes. For an always-on shop, switch the service to Render's **Starter** plan (about US$7/month). Nothing else changes.
+**Cost: US$7/month.** The app runs on Render's **Starter** plan, so it is always on, with no wait for the first visitor. The database (Neon) stays on its free plan. Render's free plan also works, but it sleeps after 15 minutes without visitors, and the next visitor waits about a minute.
 
 ## Quick links
 

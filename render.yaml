@@ -7,9 +7,8 @@ services:
     name: mart25
     runtime: node
     region: singapore
-    # Free plan: sleeps after 15 min without visitors and takes ~1 min to wake (Telegram retries the bot
-    # webhook, so messages still arrive). Use `starter` for an always-on shop.
-    plan: free
+    # Starter ($7/month): always on, no wake-up wait. (`free` sleeps after 15 min without visitors.)
+    plan: starter
     buildCommand: npm ci --include=dev && npm run build
     startCommand: npm start
     healthCheckPath: /api/health
