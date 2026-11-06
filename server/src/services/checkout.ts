@@ -169,7 +169,7 @@ export async function quoteCart(user: User, input: CartInput) {
   if (discount.coupon) discount.coupon = { ...discount.coupon, title: pick(discount.coupon.title, discount.coupon.titleEn) };
   const level = levelFor(allLevels, user.pointsBalance).current;
   const branchList = withDistances(await activeBranches(settings), input.location ?? null);
-  const branch = chooseBranch(branchList, input.branchId);
+  const branch = chooseBranch(branchList, input.branchId, { needsPin: input.fulfillmentType === 'delivery' });
   const quote = buildQuote(input, byId, pricedFrom(settings, branch), discount, level.multiplierPercent, {
     destination: input.location ?? null,
     addressReady: input.addressReady ?? false,
@@ -281,7 +281,9 @@ export async function placeOrder(user: User, input: PlaceOrderInput): Promise<{ 
 
       const level = levelFor(allLevels, u.pointsBalance).current;
       // The branch: the one picked, or the nearest to the customer's pin.
-      const branch = chooseBranch(withDistances(await activeBranches(settings, tx), destination ?? input.location ?? null), input.branchId);
+      const branch = chooseBranch(withDistances(await activeBranches(settings, tx), destination ?? input.location ?? null), input.branchId, {
+        needsPin: input.fulfillmentType === 'delivery',
+      });
       const quote = buildQuote(input, byId, pricedFrom(settings, branch), discount, level.multiplierPercent, {
         destination,
         addressReady: address != null,

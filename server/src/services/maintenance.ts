@@ -10,6 +10,7 @@ import { db, type Tx } from '../db/client.js';
 import { branches, categories, maintenanceRuns, products } from '../db/schema.js';
 import { deleteProductsTx } from './catalogDelete.js';
 import { DEFAULT_EMOJI, guessCategoryEmoji } from './categoryEmoji.js';
+import { plausibleBranchPin } from './branches.js';
 
 interface Task {
   name: string;
@@ -89,7 +90,31 @@ const secondBranch20261106: Task = {
   },
 };
 
-export const TASKS: Task[] = [cleanup20261105, categoryEmojis20261106, secondBranch20261106];
+/**
+ * 6 Nov 2026: branch 2's share link (iPhone "Share") carries no coordinates; the pin read from it
+ * landed in the USA. Clear any branch pin far from the first branch so the owner sets it on the map.
+ */
+const fixFarBranchPins20261106: Task = {
+  name: 'fix-far-branch-pins-2026-11-06',
+  run: async (tx) => {
+    const all = await tx.select().from(branches).orderBy(asc(branches.sortOrder), asc(branches.id));
+    const first = all.find((b) => b.lat != null && b.lng != null);
+    const cleared: string[] = [];
+    if (first) {
+      for (const b of all) {
+        if (b.id === first.id || b.lat == null || b.lng == null) continue;
+        if (!plausibleBranchPin({ lat: b.lat, lng: b.lng }, [{ lat: first.lat!, lng: first.lng! }])) {
+          // Drop the pin and the link (re-reading the link would give the same wrong place).
+          await tx.update(branches).set({ lat: null, lng: null, mapsUrl: null }).where(eq(branches.id, b.id));
+          cleared.push(b.name);
+        }
+      }
+    }
+    return { cleared };
+  },
+};
+
+export const TASKS: Task[] = [cleanup20261105, categoryEmojis20261106, secondBranch20261106, fixFarBranchPins20261106];
 
 export async function runMaintenance(log: FastifyBaseLogger, opts: { force?: boolean; only?: string } = {}) {
   if (config.NODE_ENV !== 'production' && !opts.force) return null;

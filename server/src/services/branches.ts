@@ -7,7 +7,7 @@ import { and, asc, eq, isNull, isNotNull, or } from 'drizzle-orm';
 import type { FastifyBaseLogger } from 'fastify';
 import { db, type Executor } from '../db/client.js';
 import { branches, type ShopSettings } from '../db/schema.js';
-import { resolveMapsLink, roadKm, type LatLng } from '../lib/geo.js';
+import { haversineKm, resolveMapsLink, roadKm, type LatLng } from '../lib/geo.js';
 import { pick } from '../lib/i18n.js';
 
 export interface BranchInfo {
@@ -54,10 +54,11 @@ export const withDistances = (list: BranchInfo[], to: LatLng | null): BranchWith
  * The branch for this order: the one the customer picked (if it's active), otherwise the nearest to
  * their pin, otherwise the first.
  */
-export function chooseBranch(list: BranchWithDistance[], branchId: number | null | undefined): BranchWithDistance {
+export function chooseBranch(list: BranchWithDistance[], branchId: number | null | undefined, opts: { needsPin?: boolean } = {}): BranchWithDistance {
   if (branchId != null) {
     const picked = list.find((b) => b.id === branchId);
-    if (picked) return picked;
+    // Delivery is priced from the branch's pin: a branch without one can't deliver.
+    if (picked && (!opts.needsPin || picked.pin || !list.some((b) => b.pin))) return picked;
   }
   const withKm = list.filter((b) => b.distanceKm != null).sort((a, b) => a.distanceKm! - b.distanceKm!);
   return withKm[0] ?? list[0];
@@ -70,6 +71,15 @@ export const pricedFrom = <S extends ShopSettings>(settings: S, branch: BranchIn
   storeLng: branch.pin?.lng ?? null,
 });
 
+/**
+ * A pin read from a Maps link is only trusted near the shop's other branches: some share links (e.g.
+ * from the iPhone Share button) carry only a place id, and the page then shows an unrelated map centre.
+ */
+export const MAX_KM_FROM_OTHER_BRANCHES = 300;
+export function plausibleBranchPin(pin: LatLng, others: LatLng[]): boolean {
+  return others.length === 0 || others.some((o) => haversineKm(o, pin) <= MAX_KM_FROM_OTHER_BRANCHES);
+}
+
 /** Branches with a Google Maps link but no pin yet → read the pin from the link (needs internet). */
 export async function ensureBranchLocations(log: FastifyBaseLogger) {
   try {
@@ -77,8 +87,14 @@ export async function ensureBranchLocations(log: FastifyBaseLogger) {
       .select()
       .from(branches)
       .where(and(isNotNull(branches.mapsUrl), or(isNull(branches.lat), isNull(branches.lng))));
+    const located = (await db.select().from(branches)).filter((b) => b.lat != null && b.lng != null).map((b) => ({ lat: b.lat!, lng: b.lng! }));
     for (const b of missing) {
-      const pin = await resolveMapsLink(b.mapsUrl!).catch(() => null);
+      let pin = await resolveMapsLink(b.mapsUrl!).catch(() => null);
+      if (pin && !plausibleBranchPin(pin, located)) {
+        log.warn({ branch: b.name, pin }, 'The location read from the branch Maps link is far from the other branches — ignored. Set the pin in Dashboard → Settings → Branches.');
+        pin = null;
+        continue;
+      }
       if (!pin) {
         log.warn({ branch: b.name, url: b.mapsUrl }, 'Could not read the branch location from its Maps link — set the pin in Dashboard → Settings → Branches.');
         continue;

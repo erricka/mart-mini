@@ -6,6 +6,7 @@ import { branches, coupons, levels, products, rewards, shopSettings } from '../.
 import { badRequest, isUniqueViolation, notFound } from '../../lib/errors.js';
 import { resolveMapsLink } from '../../lib/geo.js';
 import { mapsUsageThisMonth } from '../../services/mapsBudget.js';
+import { plausibleBranchPin } from '../../services/branches.js';
 import { tr } from '../../lib/i18n.js';
 import { idParam, parse } from '../../lib/validate.js';
 import { makeGuards } from '../../plugins/auth.js';
@@ -191,7 +192,8 @@ export async function adminLoyaltyRoutes(app: FastifyInstance) {
     if ((b.lat == null) !== (b.lng == null)) throw badRequest('bad_location', tr('err.location_lookup'));
     if (b.lat == null && b.mapsUrl) {
       const pin = await resolveMapsLink(b.mapsUrl).catch(() => null);
-      if (pin) return { ...b, lat: pin.lat, lng: pin.lng };
+      const others = (await db.select().from(branches)).filter((o) => o.lat != null && o.lng != null).map((o) => ({ lat: o.lat!, lng: o.lng! }));
+      if (pin && plausibleBranchPin(pin, others)) return { ...b, lat: pin.lat, lng: pin.lng };
     }
     return b;
   };

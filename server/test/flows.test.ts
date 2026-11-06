@@ -11,6 +11,7 @@ import { buildApp } from '../src/app.js';
 import { db, pool } from '../src/db/client.js';
 import { runMigrations } from '../src/db/migrate.js';
 import {
+  branches,
   categories,
   couponRedemptions,
   coupons,
@@ -1003,6 +1004,19 @@ describe('Branches', () => {
     expect(r.status).toBe(201);
     const detail = await call('GET', `/api/orders/${r.json.order.id}`, token);
     expect(detail.json.order).toMatchObject({ branchName: 'Branch B', pickup: { address: 'St 2, Toul Kork', hours: '8am–8pm' } });
+  });
+
+  it('never delivers from a branch without a map pin, and distrusts a far-away pin from a link', async () => {
+    const { plausibleBranchPin } = await import('../src/services/branches.js');
+    expect(plausibleBranchPin({ lat: 40.668, lng: -111.907 }, [A, B])).toBe(false); // USA vs Phnom Penh
+    expect(plausibleBranchPin({ lat: 11.57, lng: 104.9 }, [A])).toBe(true);
+    const [c] = await db.insert(branches).values({ name: 'Branch C (no pin)', sortOrder: 2 }).returning();
+    const items = [{ productId: soapId, quantity: 1 }];
+    const q = await call('POST', '/api/checkout/quote', token, { items, fulfillmentType: 'delivery', location: nearB, branchId: c.id });
+    expect(q.json.quote.branch.id).toBe(b);
+    const p = await call('POST', '/api/checkout/quote', token, { items, fulfillmentType: 'pickup', branchId: c.id });
+    expect(p.json.quote.branch.id).toBe(c.id);
+    await db.delete(branches).where(eq(branches.id, c.id));
   });
 
   it('is managed by admins, and the last open branch cannot be removed', async () => {

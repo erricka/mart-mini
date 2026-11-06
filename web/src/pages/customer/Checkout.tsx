@@ -440,7 +440,7 @@ export function Checkout() {
               />
 
               {/* Which branch delivers (nearest by default; the customer can pick another). */}
-              {branchList.length > 1 && q?.branch && (
+              {branchList.filter((b) => b.pin).length > 1 && q?.branch && (
                 <div className="flex items-center gap-2 rounded-xl bg-surface-2 px-3 py-2.5 text-sm">
                   <Store className="h-4 w-4 shrink-0 text-brand" />
                   <span className="min-w-0 flex-1 truncate">
@@ -712,7 +712,7 @@ export function Checkout() {
             <Radio on={d.branchId == null} />
           </button>
           <BranchChoice
-            branches={branchList}
+            branches={branchList.filter((b) => b.pin)}
             selectedId={d.branchId}
             onPick={(id) => {
               set({ branchId: id });
