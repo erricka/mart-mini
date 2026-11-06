@@ -1,3 +1,5 @@
+import dns from 'node:dns';
+import net from 'node:net';
 import { config } from './config.js';
 import { buildApp } from './app.js';
 import { pool, waitForDatabase } from './db/client.js';
@@ -9,6 +11,11 @@ import { importDiskPhotos } from './services/media.js';
 import { runMaintenance } from './services/maintenance.js';
 import { ensureStoreLocation } from './services/settings.js';
 import { dispatchPending, startNotificationWorker } from './services/notifications.js';
+
+// Outgoing connections (Telegram, Google): prefer IPv4 and give each address more than Node's 250 ms
+// default — on Render, connecting to Telegram sometimes timed out at start-up with the default.
+dns.setDefaultResultOrder('ipv4first');
+net.setDefaultAutoSelectFamilyAttemptTimeout(2000);
 
 // A database that was just resumed (or is still booting) can take a minute to accept connections.
 await waitForDatabase();
