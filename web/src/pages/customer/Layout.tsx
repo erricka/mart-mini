@@ -75,12 +75,14 @@ export function CustomerLayout() {
                 to={tab.to}
                 end={tab.end}
                 className={({ isActive }) =>
-                  cx('relative flex flex-col items-center gap-1 pb-2 pt-2.5 text-[11px] font-medium transition', isActive ? 'text-brand' : 'text-muted')
+                  cx('relative flex flex-col items-center gap-0.5 pb-2 pt-2 text-[11px] font-medium transition', isActive ? 'font-semibold text-brand' : 'text-muted')
                 }
               >
                 {({ isActive }) => (
                   <>
-                    <tab.icon className="h-[22px] w-[22px]" strokeWidth={isActive ? 2.2 : 1.7} aria-hidden />
+                    <span className={cx('grid h-7 w-12 place-items-center rounded-full transition', isActive && 'bg-brand/10')}>
+                      <tab.icon className="h-[22px] w-[22px]" strokeWidth={isActive ? 2.2 : 1.7} aria-hidden />
+                    </span>
                     <span className="max-w-full truncate px-0.5">{t(tab.label)}</span>
                     {tab.to === '/cart' && count > 0 && (
                       <span

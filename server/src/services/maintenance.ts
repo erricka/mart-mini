@@ -1,55 +1,90 @@
 /**
- * One-off clean-ups the shop owner asked for, run once at start-up on the live shop.
+ * One-off clean-ups the shop owner asked for, run once each at start-up on the live shop.
  * Each task is recorded in `maintenance_runs` (with what it did), so it never runs twice — even when
- * two server instances start at the same time.
+ * two server instances start at the same time. A failing task changes nothing and retries next start.
  */
 import { and, eq, gte, inArray, lt } from 'drizzle-orm';
 import type { FastifyBaseLogger } from 'fastify';
 import { config } from '../config.js';
-import { db } from '../db/client.js';
+import { db, type Tx } from '../db/client.js';
 import { categories, maintenanceRuns, products } from '../db/schema.js';
 import { deleteProductsTx } from './catalogDelete.js';
+import { DEFAULT_EMOJI, guessCategoryEmoji } from './categoryEmoji.js';
+
+interface Task {
+  name: string;
+  run: (tx: Tx) => Promise<Record<string, unknown>>;
+}
 
 /**
- * 5 Nov 2026: the owner asked to remove
- *  - the 254 products uploaded that day (the POS import confirmed at 03:29 UTC — all its rows share the
- *    import's transaction time). Only removed if that batch is exactly 254 products, as the owner said;
- *    otherwise it is left alone and the owner removes it from Catalog → "Added: today/yesterday".
- *  - every food category of the starter set, with the products in them.
+ * 5 Nov 2026: remove the 254 products uploaded that day (the POS import confirmed at 03:29 UTC — all its
+ * rows share the import's transaction time) — only if that batch is exactly 254, as the owner said —
+ * and every food category of the starter set with its products.
  */
-const CLEANUP_2026_11_05 = {
+const cleanup20261105: Task = {
   name: 'cleanup-2026-11-05',
-  batch: { from: new Date('2026-11-05T03:29:10Z'), to: new Date('2026-11-05T03:31:00Z'), expected: 254 },
-  foodCategorySlugs: ['fresh-produce', 'dairy-eggs', 'bakery', 'meat-seafood', 'drinks', 'snacks', 'pantry'],
-};
-
-export async function runMaintenance(log: FastifyBaseLogger, opts: { force?: boolean } = {}) {
-  if (config.NODE_ENV !== 'production' && !opts.force) return null;
-  const task = CLEANUP_2026_11_05;
-  return db.transaction(async (tx) => {
-    const claimed = await tx.insert(maintenanceRuns).values({ name: task.name }).onConflictDoNothing().returning();
-    if (!claimed.length) return null; // already done
-
-    const batch = await tx
-      .select({ id: products.id })
-      .from(products)
-      .where(and(gte(products.createdAt, task.batch.from), lt(products.createdAt, task.batch.to)));
+  run: async (tx) => {
+    const from = new Date('2026-11-05T03:29:10Z');
+    const to = new Date('2026-11-05T03:31:00Z');
+    const expected = 254;
+    const batch = await tx.select({ id: products.id }).from(products).where(and(gte(products.createdAt, from), lt(products.createdAt, to)));
     const batchResult =
-      batch.length === task.batch.expected
-        ? { removed: (await deleteProductsTx(tx, batch.map((b) => b.id))).deleted }
-        : { skipped: true, found: batch.length, expected: task.batch.expected };
+      batch.length === expected ? { removed: (await deleteProductsTx(tx, batch.map((b) => b.id))).deleted } : { skipped: true, found: batch.length, expected };
 
-    const food = await tx.select().from(categories).where(inArray(categories.slug, task.foodCategorySlugs));
+    const food = await tx
+      .select()
+      .from(categories)
+      .where(inArray(categories.slug, ['fresh-produce', 'dairy-eggs', 'bakery', 'meat-seafood', 'drinks', 'snacks', 'pantry']));
     let foodProducts = 0;
     for (const c of food) {
       const ids = (await tx.select({ id: products.id }).from(products).where(eq(products.categoryId, c.id))).map((r) => r.id);
       foodProducts += (await deleteProductsTx(tx, ids)).deleted;
       await tx.delete(categories).where(eq(categories.id, c.id));
     }
+    return { batch: batchResult, foodCategories: food.map((c) => c.nameEn ?? c.name), foodProducts };
+  },
+};
 
-    const result = { batch: batchResult, foodCategories: food.map((c) => c.nameEn ?? c.name), foodProducts };
-    await tx.update(maintenanceRuns).set({ result }).where(eq(maintenanceRuns.name, task.name));
-    log.info({ maintenance: task.name, result }, `One-off clean-up done: ${JSON.stringify(result)}`);
-    return result;
-  });
+/** 6 Nov 2026: categories still showing the default 🛒 get an emoji that fits (and so do their products). */
+const categoryEmojis20261106: Task = {
+  name: 'category-emojis-2026-11-06',
+  run: async (tx) => {
+    const changed: Record<string, string> = {};
+    let productsUpdated = 0;
+    for (const c of await tx.select().from(categories).where(eq(categories.emoji, DEFAULT_EMOJI))) {
+      const emoji = guessCategoryEmoji(c.name, c.nameEn);
+      if (!emoji) continue;
+      await tx.update(categories).set({ emoji }).where(eq(categories.id, c.id));
+      const p = await tx
+        .update(products)
+        .set({ emoji })
+        .where(and(eq(products.categoryId, c.id), eq(products.emoji, DEFAULT_EMOJI)))
+        .returning({ id: products.id });
+      productsUpdated += p.length;
+      changed[c.name] = emoji;
+    }
+    return { changed, productsUpdated };
+  },
+};
+
+export const TASKS: Task[] = [cleanup20261105, categoryEmojis20261106];
+
+export async function runMaintenance(log: FastifyBaseLogger, opts: { force?: boolean; only?: string } = {}) {
+  if (config.NODE_ENV !== 'production' && !opts.force) return null;
+  const results: Record<string, unknown> = {};
+  for (const task of TASKS) {
+    if (opts.only && task.name !== opts.only) continue;
+    const result = await db.transaction(async (tx) => {
+      const claimed = await tx.insert(maintenanceRuns).values({ name: task.name }).onConflictDoNothing().returning();
+      if (!claimed.length) return null; // already done
+      const r = await task.run(tx);
+      await tx.update(maintenanceRuns).set({ result: r }).where(eq(maintenanceRuns.name, task.name));
+      return r;
+    });
+    if (result) {
+      results[task.name] = result;
+      log.info({ maintenance: task.name, result }, `One-off task ${task.name} done: ${JSON.stringify(result)}`);
+    }
+  }
+  return Object.keys(results).length ? results : null;
 }

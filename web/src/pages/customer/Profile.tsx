@@ -63,7 +63,7 @@ export function Profile() {
       </Card>
 
       <SectionTitle action={<button className="text-sm font-semibold text-brand" onClick={() => setEditAddress({ label: 'Home' })}>{t('pf.add')}</button>}>{t('pf.addresses')}</SectionTitle>
-      <div className="divide-y divide-line rounded-2xl bg-surface">
+      <div className="divide-y divide-line rounded-2xl bg-surface ring-1 ring-line">
         {addresses.data?.length === 0 && <p className="p-4 text-sm text-muted">{t('pf.no_addresses')}</p>}
         {addresses.data?.map((a) => (
           <div key={a.id} className="flex items-start gap-3 p-4">

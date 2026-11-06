@@ -3,13 +3,13 @@
 @custom-variant dark (&:where(.dark, .dark *));
 
 :root {
-  /* Clean, neutral palette: light-grey page, white cards, one green for actions. */
-  --bg: #f5f6f5;
+  /* Clean white app with green highlights: white page and cards (thin outline), green for actions. */
+  --bg: #ffffff;
   --surface: #ffffff;
-  --surface-2: #f0f1f0;
+  --surface-2: #f3f5f4;
   --ink: #1b1d1c;
   --muted: #6a6f6c;
-  --line: #e6e8e6;
+  --line: #e7eae8;
   --brand: #16a34a;
   --brand-ink: #ffffff;
   --sun: #f59e0b;

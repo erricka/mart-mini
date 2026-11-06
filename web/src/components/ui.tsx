@@ -51,7 +51,7 @@ export function Button({
 }
 
 export const Card = ({ className, children, ...rest }: { className?: string; children: ReactNode } & React.HTMLAttributes<HTMLDivElement>) => (
-  <div {...rest} className={cx('rounded-2xl bg-surface', !/(^|\s)p-[\d.]+/.test(className ?? '') && 'p-4', className)}>
+  <div {...rest} className={cx('rounded-2xl bg-surface ring-1 ring-line', !/(^|\s)p-[\d.]+/.test(className ?? '') && 'p-4', className)}>
     {children}
   </div>
 );

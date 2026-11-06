@@ -35,11 +35,11 @@ export function ProductPage() {
         <ChevronLeft className="h-5 w-5" />
         {t('common.back')}
       </button>
-      <div className="relative rounded-2xl bg-surface p-3">
+      <div className="relative rounded-2xl bg-surface ring-1 ring-line p-3">
         <ProductImage emoji={p.emoji} imageUrl={p.imageUrl} size="xl" className={!p.inStock ? 'opacity-50 grayscale' : ''} />
         {p.discountPercent > 0 && <Badge className="absolute left-5 top-5 bg-rose-500 px-2.5 py-1 text-white">{t('product.save_pct', { n: p.discountPercent })}</Badge>}
       </div>
-      <div className="mt-3 rounded-2xl bg-surface p-4">
+      <div className="mt-3 rounded-2xl bg-surface ring-1 ring-line p-4">
         {category && (
           <Link to={`/shop?category=${category.id}`} className="text-sm font-medium text-brand">
             {category.name}
@@ -55,7 +55,7 @@ export function ProductPage() {
         {p.description && <p className="mt-3 text-[15px] leading-relaxed text-ink/80">{p.description}</p>}
       </div>
 
-      <div className="mt-3 rounded-2xl bg-surface p-4">
+      <div className="mt-3 rounded-2xl bg-surface ring-1 ring-line p-4">
         {inCart ? (
           <div className="flex items-center justify-between">
             <div>

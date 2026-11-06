@@ -931,13 +931,29 @@ describe('One-off clean-up of 5 Nov 2026', () => {
     const keep = (await db.insert(products).values({ categoryId: soap.id, name: 'Added later', priceCents: 100, createdAt: new Date('2026-11-05T05:00:00Z') }).returning())[0];
     const [household] = await db.insert(categories).values({ name: 'Household', slug: 'household' }).returning();
 
-    const result = await runMaintenance(log, { force: true });
-    expect(result).toMatchObject({ batch: { removed: 254 }, foodCategories: ['Fresh Produce'] });
+    const result = (await runMaintenance(log, { force: true, only: 'cleanup-2026-11-05' })) as any;
+    expect(result['cleanup-2026-11-05']).toMatchObject({ batch: { removed: 254 }, foodCategories: ['Fresh Produce'] });
     expect((await db.select().from(products).where(inArray(products.id, batch.map((b) => b.id)))).length).toBe(0);
     expect((await db.select().from(products).where(eq(products.id, keep.id))).length).toBe(1);
     expect((await db.select().from(categories).where(eq(categories.slug, 'fresh-produce'))).length).toBe(0);
     expect((await db.select().from(categories).where(eq(categories.id, household.id))).length).toBe(1);
     // Runs once only.
-    expect(await runMaintenance(log, { force: true })).toBeNull();
+    expect(await runMaintenance(log, { force: true, only: 'cleanup-2026-11-05' })).toBeNull();
+  });
+
+  it('gives default-🛒 categories (and their 🛒 products) an emoji that fits their name', async () => {
+    const { runMaintenance } = await import('../src/services/maintenance.js');
+    const log = { info: () => {}, error: () => {} } as any;
+    const [chairs] = await db.insert(categories).values({ name: 'កៅអី', slug: 'chairs-test', emoji: '🛒' }).returning();
+    const [mystery] = await db.insert(categories).values({ name: 'XYZ', slug: 'xyz-test', emoji: '🛒' }).returning();
+    const [chair] = await db.insert(products).values({ categoryId: chairs.id, name: 'កៅអីបត់', priceCents: 500, emoji: '🛒' }).returning();
+    const result = (await runMaintenance(log, { force: true, only: 'category-emojis-2026-11-06' })) as any;
+    expect(result['category-emojis-2026-11-06'].changed['កៅអី']).toBe('🪑');
+    expect((await db.select().from(categories).where(eq(categories.id, chairs.id)))[0].emoji).toBe('🪑');
+    expect((await db.select().from(categories).where(eq(categories.id, mystery.id)))[0].emoji).toBe('🛒');
+    expect((await db.select().from(products).where(eq(products.id, chair.id)))[0].emoji).toBe('🪑');
+    // New categories get one straight away.
+    const created = await call('POST', '/api/admin/categories', adminToken, { name: 'ធុងសម្រាម' });
+    expect(created.json.category.emoji).toBe('🗑️');
   });
 });

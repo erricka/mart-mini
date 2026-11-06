@@ -13,6 +13,7 @@ import { categories, inventoryMovements, products, type Product } from '../db/sc
 import { badRequest } from '../lib/errors.js';
 import { tr } from '../lib/i18n.js';
 import { isPhotoUrl } from './media.js';
+import { DEFAULT_EMOJI, guessCategoryEmoji } from './categoryEmoji.js';
 
 const cell = z.union([z.string(), z.number(), z.boolean(), z.null()]).optional();
 
@@ -285,8 +286,10 @@ export async function importProducts(input: z.infer<typeof importSchema>, actorU
     for (const name of newCategories) {
       const slug = `${slugify(name) || 'aisle'}-${Date.now().toString(36)}${sort}`;
       const nameEn = name === DEFAULT_CATEGORY.name ? DEFAULT_CATEGORY.nameEn : null;
-      const [c] = await tx.insert(categories).values({ name, nameEn, slug, emoji: '🛒', sortOrder: sort++ }).returning({ id: categories.id });
+      const emoji = guessCategoryEmoji(name, nameEn) ?? DEFAULT_EMOJI;
+      const [c] = await tx.insert(categories).values({ name, nameEn, slug, emoji, sortOrder: sort++ }).returning({ id: categories.id });
       catLookup.set(catKey(name), c.id);
+      catEmoji.set(c.id, emoji);
     }
     const now = new Date();
     for (const p of plan) {

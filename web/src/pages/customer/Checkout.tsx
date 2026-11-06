@@ -846,7 +846,7 @@ function DiscountOption({ active, onClick, icon: Icon, title, text, tag, applied
 }
 
 /** Checkout sections: plain white blocks with a small heading. */
-const BLOCK = 'rounded-2xl bg-surface p-4';
+const BLOCK = 'rounded-2xl bg-surface ring-1 ring-line p-4';
 const H2 = 'text-base font-bold';
 
 function Radio({ on }: { on: boolean }) {

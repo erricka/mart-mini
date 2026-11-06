@@ -89,7 +89,7 @@ export function Cart() {
         </Notice>
       )}
 
-      <div className="divide-y divide-line rounded-2xl bg-surface px-3">
+      <div className="divide-y divide-line rounded-2xl bg-surface ring-1 ring-line px-3">
         {lines.map((l) => {
           const ql = q?.lines.find((x) => x.productId === l.productId && !x.isGift);
           const gone = q?.missingProductIds.includes(l.productId);

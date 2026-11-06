@@ -42,7 +42,7 @@ export function ProductCard({ p }: { p: Product; color?: string }) {
                 add(p);
               }}
               aria-label={t('product.add_aria', { name: p.name })}
-              className="grid h-9 w-9 place-items-center rounded-full bg-surface text-brand shadow-sm ring-1 ring-line transition active:scale-90 disabled:text-muted disabled:opacity-60"
+              className="grid h-9 w-9 place-items-center rounded-full bg-brand text-brand-ink shadow-sm transition active:scale-90 disabled:bg-line disabled:text-muted"
             >
               <Plus className="h-5 w-5" strokeWidth={2.4} />
             </button>

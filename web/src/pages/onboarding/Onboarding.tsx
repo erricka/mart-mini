@@ -173,7 +173,7 @@ export function Onboarding({ token, prefill }: { token: string; prefill: Prefill
                 teaser?.welcomeCoupon ? t('ob.perk3_gift', { gift: teaser.welcomeCoupon.title }) : t('ob.perk3_more'),
               ],
             ] as [LucideIcon, string, string][]).map(([Icon, title, text], i) => (
-              <li key={i} className="animate-rise flex gap-3 rounded-2xl bg-surface p-3.5" style={{ animationDelay: `${i * 80}ms` }}>
+              <li key={i} className="animate-rise flex gap-3 rounded-2xl bg-surface ring-1 ring-line p-3.5" style={{ animationDelay: `${i * 80}ms` }}>
                 <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-brand/10 text-brand">
                   <Icon className="h-5 w-5" strokeWidth={1.9} />
                 </span>
@@ -211,7 +211,7 @@ export function Onboarding({ token, prefill }: { token: string; prefill: Prefill
           <Field label={t('ob.last_name')}>
             <Input value={lastName} onChange={(e) => setLastName(e.target.value)} autoComplete="family-name" maxLength={64} />
           </Field>
-          <div className="rounded-2xl bg-surface p-4">
+          <div className="rounded-2xl bg-surface ring-1 ring-line p-4">
             <div className="font-semibold">
               {t('ob.phone_title')} <span className="font-normal text-muted">{t('ob.optional')}</span>
             </div>
@@ -282,7 +282,7 @@ export function Onboarding({ token, prefill }: { token: string; prefill: Prefill
             [Ban, t('privacy.never_title'), t('privacy.never_text')],
             [Pencil, t('privacy.control_title'), t('privacy.control_text', { contact: shop.data?.supportPhone || t('privacy.the_shop') })],
           ] as [LucideIcon, string, string][]).map(([Icon, title, text]) => (
-            <li key={title} className="flex gap-3 rounded-2xl bg-surface p-3.5">
+            <li key={title} className="flex gap-3 rounded-2xl bg-surface ring-1 ring-line p-3.5">
               <Icon className="mt-0.5 h-5 w-5 shrink-0 text-muted" strokeWidth={1.9} />
               <span>
                 <span className="block font-semibold">{title}</span>
@@ -324,7 +324,7 @@ export function Onboarding({ token, prefill }: { token: string; prefill: Prefill
         <p className="text-sm text-muted">{t('ob.ready', { shop: shopName })}</p>
       </div>
 
-      <div className="animate-rise mt-6 rounded-2xl bg-surface p-4">
+      <div className="animate-rise mt-6 rounded-2xl bg-surface ring-1 ring-line p-4">
         <div className="flex items-center justify-between gap-2 text-sm">
           <span className="font-semibold">{r.loyalty.level.name}</span>
           {r.welcome?.pointsAwarded ? <Badge className="bg-brand/10 text-brand">{t('ob.welcome_bonus', { n: r.welcome.pointsAwarded })}</Badge> : null}
@@ -345,7 +345,7 @@ export function Onboarding({ token, prefill }: { token: string; prefill: Prefill
       </div>
 
       {welcomeCoupon && (
-        <div className="animate-rise mt-3 flex items-center gap-3 rounded-2xl bg-surface p-4" style={{ animationDelay: '150ms' }}>
+        <div className="animate-rise mt-3 flex items-center gap-3 rounded-2xl bg-surface ring-1 ring-line p-4" style={{ animationDelay: '150ms' }}>
           <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-brand/10 text-brand">
             <Ticket className="h-5 w-5" strokeWidth={1.9} />
           </span>
@@ -362,7 +362,7 @@ export function Onboarding({ token, prefill }: { token: string; prefill: Prefill
             setAskUpdates(false);
             if (ok) haptic('success');
           }}
-          className="animate-rise mt-3 flex w-full items-center gap-3 rounded-2xl bg-surface p-4 text-left"
+          className="animate-rise mt-3 flex w-full items-center gap-3 rounded-2xl bg-surface ring-1 ring-line p-4 text-left"
         >
           <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-brand/10 text-brand">
             <Bell className="h-5 w-5" strokeWidth={1.9} />

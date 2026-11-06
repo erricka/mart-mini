@@ -26,33 +26,33 @@ export function Home() {
 
   return (
     <div>
-      {/* Greeting */}
-      <header className="flex items-center justify-between gap-3">
-        <div className="min-w-0">
-          <p className="text-sm text-muted">{greeting()}</p>
-          <h1 className="truncate text-[22px] font-bold">{user?.firstName}</h1>
-        </div>
-        <Link to="/profile" aria-label="Profile">
-          <Avatar name={`${user?.firstName ?? ''} ${user?.lastName ?? ''}`} url={user?.photoUrl} size={40} />
-        </Link>
-      </header>
-
-      {/* Search */}
-      <button
-        onClick={() => navigate('/shop?focus=1')}
-        className="mt-4 flex w-full items-center gap-3 rounded-xl bg-surface px-4 py-3 text-left text-muted ring-1 ring-line"
-      >
-        <Search className="h-5 w-5" />
-        <span className="truncate">{t('home.search')}</span>
-      </button>
+      {/* Green header: greeting + search */}
+      <div className="-mx-4 -mt-4 rounded-b-3xl bg-brand px-4 pb-5 pt-4 text-brand-ink">
+        <header className="flex items-center justify-between gap-3">
+          <div className="min-w-0">
+            <p className="text-sm opacity-85">{greeting()}</p>
+            <h1 className="truncate text-[22px] font-bold">{user?.firstName}</h1>
+          </div>
+          <Link to="/profile" aria-label="Profile" className="rounded-full bg-white">
+            <Avatar name={`${user?.firstName ?? ''} ${user?.lastName ?? ''}`} url={user?.photoUrl} size={40} />
+          </Link>
+        </header>
+        <button
+          onClick={() => navigate('/shop?focus=1')}
+          className="mt-4 flex w-full items-center gap-3 rounded-xl bg-white px-4 py-3 text-left text-muted shadow-sm"
+        >
+          <Search className="h-5 w-5 text-brand" />
+          <span className="truncate">{t('home.search')}</span>
+        </button>
+      </div>
 
       {/* Points */}
       {home.isLoading ? (
-        <Skeleton className="mt-3 h-[116px] rounded-2xl" />
+        <Skeleton className="mt-4 h-[116px] rounded-2xl" />
       ) : home.error ? (
         <ErrorState error={home.error} onRetry={() => home.refetch()} />
       ) : home.data ? (
-        <Link to="/rewards" className="mt-3 block rounded-2xl bg-surface p-4 transition active:scale-[0.99]">
+        <Link to="/rewards" className="mt-4 block rounded-2xl bg-surface ring-1 ring-line p-4 transition active:scale-[0.99]">
           <div className="flex items-center justify-between gap-3">
             <div className="flex items-center gap-2.5">
               <span className="grid h-9 w-9 place-items-center rounded-full bg-amber-50 text-amber-500 dark:bg-amber-500/10">
@@ -82,7 +82,7 @@ export function Home() {
       ) : null}
 
       {(home.data?.activeOrders ?? 0) > 0 && (
-        <Link to="/orders" className="mt-3 flex items-center gap-3 rounded-2xl bg-surface p-4">
+        <Link to="/orders" className="mt-3 flex items-center gap-3 rounded-2xl bg-surface ring-1 ring-line p-4">
           <span className="grid h-9 w-9 place-items-center rounded-full bg-brand/10 text-brand">
             <Package className="h-5 w-5" />
           </span>
@@ -105,7 +105,7 @@ export function Home() {
           ? Array.from({ length: 8 }).map((_, i) => <Skeleton key={i} className="mx-auto h-14 w-14 rounded-full" />)
           : cats.data?.map((c) => (
               <Link key={c.id} to={`/shop?category=${c.id}`} className="flex flex-col items-center gap-1.5 text-center transition active:scale-95">
-                <span className="grid h-14 w-14 place-items-center rounded-full bg-surface text-[28px]">{c.emoji}</span>
+                <span className="grid h-14 w-14 place-items-center rounded-full bg-brand/10 text-[28px]">{c.emoji}</span>
                 <span className="line-clamp-2 text-xs leading-tight">{c.name}</span>
               </Link>
             ))}

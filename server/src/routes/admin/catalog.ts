@@ -11,6 +11,7 @@ import { makeGuards } from '../../plugins/auth.js';
 import { importProducts, importSchema } from '../../services/productImport.js';
 import { isPhotoUrl, saveMedia } from '../../services/media.js';
 import { deleteCategory, deleteProducts, productCountIn } from '../../services/catalogDelete.js';
+import { DEFAULT_EMOJI, guessCategoryEmoji } from '../../services/categoryEmoji.js';
 
 /** When a product was added, by day in the shop's time zone (Cambodia). */
 const SHOP_TZ = 'Asia/Phnom_Penh';
@@ -247,7 +248,13 @@ export async function adminCatalogRoutes(app: FastifyInstance) {
     const body = parse(categoryInput, req.body);
     const [c] = await db
       .insert(categories)
-      .values({ ...body, nameEn: body.nameEn || null, slug: body.slug ?? slugify(body.nameEn || body.name) })
+      .values({
+        ...body,
+        // No emoji picked → one that fits the name (🧼 for soap, 🪑 for chairs…).
+        emoji: body.emoji === DEFAULT_EMOJI ? (guessCategoryEmoji(body.name, body.nameEn) ?? DEFAULT_EMOJI) : body.emoji,
+        nameEn: body.nameEn || null,
+        slug: body.slug ?? slugify(body.nameEn || body.name),
+      })
       .returning();
     return reply.status(201).send({ category: c });
   });

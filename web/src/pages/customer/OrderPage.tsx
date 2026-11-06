@@ -53,7 +53,7 @@ export function OrderPage() {
   return (
     <div className="space-y-4">
       {justPlaced && o.status !== 'cancelled' && (
-        <div className="animate-rise flex gap-3 rounded-2xl bg-surface p-4">
+        <div className="animate-rise flex gap-3 rounded-2xl bg-surface ring-1 ring-line p-4">
           <CircleCheck className="h-7 w-7 shrink-0 text-brand" strokeWidth={1.9} />
           <div className="min-w-0">
             <h1 className="text-lg font-bold">{t('order.placed_title')}</h1>
@@ -68,7 +68,7 @@ export function OrderPage() {
             await requestBotMessages();
             setAskUpdates(false);
           }}
-          className="flex w-full items-center gap-3 rounded-2xl bg-surface p-4 text-left text-sm font-medium"
+          className="flex w-full items-center gap-3 rounded-2xl bg-surface ring-1 ring-line p-4 text-left text-sm font-medium"
         >
           <Bell className="h-5 w-5 shrink-0 text-brand" />
           <span className="flex-1">{t('order.allow_updates')}</span>
@@ -96,7 +96,7 @@ export function OrderPage() {
       </Card>
 
       {o.pointsEstimate > 0 && o.status !== 'cancelled' && (
-        <div className="flex items-center gap-2 rounded-2xl bg-surface px-4 py-3 text-sm">
+        <div className="flex items-center gap-2 rounded-2xl bg-surface ring-1 ring-line px-4 py-3 text-sm">
           <Star className="h-4 w-4 shrink-0 fill-amber-400 text-amber-400" />
           {o.pointsReversed > 0
             ? t('order.pts_reversed', { n: o.pointsReversed })

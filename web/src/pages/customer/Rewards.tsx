@@ -25,7 +25,7 @@ export function Rewards() {
       <h1 className="text-[22px] font-bold">{t('rw.title')}</h1>
 
       {/* Points */}
-      <div className="mt-4 rounded-2xl bg-surface p-4">
+      <div className="mt-4 rounded-2xl bg-surface ring-1 ring-line p-4">
         <div className="flex items-center justify-between gap-3 text-sm">
           <span className="font-semibold">
             {r.level.name}
@@ -135,7 +135,7 @@ export function Rewards() {
       <SectionTitle>{t('rw.badges')}</SectionTitle>
       <div className="grid grid-cols-3 gap-2.5">
         {r.badges.map((b) => (
-          <div key={b.id} className={cx('flex flex-col items-center rounded-2xl bg-surface p-3 text-center', !b.earned && 'opacity-70')}>
+          <div key={b.id} className={cx('flex flex-col items-center rounded-2xl bg-surface ring-1 ring-line p-3 text-center', !b.earned && 'opacity-70')}>
             <span className={cx('text-3xl', !b.earned && 'opacity-40 grayscale')}>{b.emoji}</span>
             <span className={cx('mt-1 text-xs font-semibold', !b.earned && 'text-muted')}>{b.title}</span>
             {!b.earned && <span className="mt-0.5 text-[10px] leading-tight text-muted">{b.hint}</span>}

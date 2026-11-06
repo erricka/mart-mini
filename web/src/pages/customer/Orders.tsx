@@ -24,13 +24,13 @@ export function Orders() {
       {active.length > 0 && (
         <>
           <h2 className="mb-2 text-sm font-semibold text-muted">{t('orders.in_progress')}</h2>
-          <div className="mb-6 divide-y divide-line rounded-2xl bg-surface">{active.map((o) => <OrderRow key={o.id} o={o} />)}</div>
+          <div className="mb-6 divide-y divide-line rounded-2xl bg-surface ring-1 ring-line">{active.map((o) => <OrderRow key={o.id} o={o} />)}</div>
         </>
       )}
       {past.length > 0 && (
         <>
           <h2 className="mb-2 text-sm font-semibold text-muted">{t('orders.past')}</h2>
-          <div className="divide-y divide-line rounded-2xl bg-surface">{past.map((o) => <OrderRow key={o.id} o={o} />)}</div>
+          <div className="divide-y divide-line rounded-2xl bg-surface ring-1 ring-line">{past.map((o) => <OrderRow key={o.id} o={o} />)}</div>
         </>
       )}
     </div>
