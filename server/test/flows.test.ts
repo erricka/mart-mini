@@ -75,7 +75,7 @@ beforeAll(async () => {
     .insert(coupons)
     .values({ code: 'FRESH5', title: '$5 off', discountType: 'fixed', value: 500, minSubtotalCents: 1000, perCustomerLimit: 1, isPublic: true })
     .returning();
-  await db.insert(shopSettings).values({ id: 1, deliveryFeeCents: 299, freeDeliveryMinCents: 3500, minOrderCents: 0, signupBonusPoints: 50, pointsPerDollar: 1, welcomeCouponId: welcome.id, pickupAddress: 'Desk' });
+  await db.insert(shopSettings).values({ id: 1, deliveryFeeCents: 299, freeDeliveryMinCents: 3500, minOrderCents: 0, signupBonusPoints: 50, pointsPerDollar: 1, welcomeCouponId: welcome.id, pickupAddress: 'Desk', hideWithoutPhoto: false });
   await db.insert(levels).values({ name: 'Sprout', emoji: '🌱', minPoints: 0, multiplierPercent: 100 });
   const [cat] = await db.insert(categories).values({ name: 'Fresh Produce', slug: 'fresh-produce' }).returning();
   const [apples] = await db.insert(products).values({ categoryId: cat.id, name: 'Apples', priceCents: 500, stock: 100 }).returning();
@@ -1047,5 +1047,22 @@ describe('Security: admin activity log and rate limits', () => {
     let limited = 0;
     for (let i = 0; i < 305; i++) if ((await call('GET', '/api/shop')).status === 429) limited++;
     expect(limited).toBeGreaterThan(0);
+  });
+});
+
+describe('Products without a photo', () => {
+  it('are hidden from customers when the owner chooses so (and their empty categories too)', async () => {
+    const [cat] = await db.insert(categories).values({ name: 'Photo test', slug: 'photo-test' }).returning();
+    const [bare] = await db.insert(products).values({ categoryId: cat.id, name: 'No photo item', priceCents: 100, stock: 5 }).returning();
+    const shown = async () => (await call('GET', `/api/products?categoryId=${cat.id}`, adminToken)).json.products.length;
+    expect(await shown()).toBe(1);
+    await db.update(shopSettings).set({ hideWithoutPhoto: true });
+    expect(await shown()).toBe(0);
+    expect((await call('GET', `/api/products/${bare.id}`, adminToken)).status).toBe(404);
+    expect((await call('GET', '/api/categories', adminToken)).json.categories.some((c: any) => c.id === cat.id)).toBe(false);
+    await db.update(products).set({ imageUrl: 'https://example.com/a.jpg' }).where(eq(products.id, bare.id));
+    expect(await shown()).toBe(1);
+    expect((await call('GET', '/api/categories', adminToken)).json.categories.find((c: any) => c.id === cat.id).productCount).toBe(1);
+    await db.update(shopSettings).set({ hideWithoutPhoto: false });
   });
 });

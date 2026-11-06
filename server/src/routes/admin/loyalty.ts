@@ -40,6 +40,7 @@ const settingsInput = z.object({
   deliveryMinFeeCents: z.number().int().min(0).max(10_000_000).optional(),
   deliveryMaxKm: z.number().int().min(1).max(500).nullable().optional(),
   nextDayEnabled: z.boolean().optional(),
+  hideWithoutPhoto: z.boolean().optional(),
   nextDayFeeCents: z.number().int().min(0).max(10_000_000).optional(),
 });
 

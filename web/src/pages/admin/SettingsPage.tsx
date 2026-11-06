@@ -67,6 +67,7 @@ function SettingsForm({ data }: { data: LoyaltyData }) {
     minFee: fromCents(s.deliveryMinFeeCents),
     maxKm: s.deliveryMaxKm == null ? '' : String(s.deliveryMaxKm),
     nextDayEnabled: s.nextDayEnabled,
+    hideWithoutPhoto: s.hideWithoutPhoto,
     nextDayFee: fromCents(s.nextDayFeeCents),
   });
   const shop = useShop();
@@ -111,6 +112,7 @@ function SettingsForm({ data }: { data: LoyaltyData }) {
           deliveryMinFeeCents: toCents(f.minFee) ?? 0,
           deliveryMaxKm: f.maxKm.trim() === '' ? null : Math.max(1, Math.round(Number(f.maxKm)) || 1),
           nextDayEnabled: f.nextDayEnabled,
+          hideWithoutPhoto: f.hideWithoutPhoto,
           nextDayFeeCents: toCents(f.nextDayFee) ?? 0,
         }),
       }),
@@ -159,6 +161,10 @@ function SettingsForm({ data }: { data: LoyaltyData }) {
         <Field label={t('as.currency')} hint={t('as.currency_hint')}>
           <Input disabled={d} value={f.currency} onChange={(e) => set('currency', e.target.value)} maxLength={3} className="uppercase" />
         </Field>
+      </Card>
+
+      <Card>
+        <Toggle checked={f.hideWithoutPhoto} onChange={(v) => !d && set('hideWithoutPhoto', v)} label={t('as.hide_no_photo')} hint={t('as.hide_no_photo_hint')} />
       </Card>
 
       <Card className="grid gap-3 sm:grid-cols-2">

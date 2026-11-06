@@ -44,6 +44,7 @@ export interface Settings {
   deliveryMinFeeCents: number;
   deliveryMaxKm: number | null;
   nextDayEnabled: boolean;
+  hideWithoutPhoto: boolean;
   nextDayFeeCents: number;
 }
 
@@ -97,7 +98,7 @@ const SETTINGS_KEYS: (keyof Settings)[] = [
   'shopName', 'tagline', 'taglineEn', 'currency', 'deliveryEnabled', 'pickupEnabled', 'deliveryFeeCents', 'freeDeliveryMinCents',
   'minOrderCents', 'pickupAddress', 'pickupHours', 'supportPhone', 'pointsPerDollar', 'signupBonusPoints', 'welcomeCouponId', 'rewardExpiryDays',
   'deliveryPricing', 'storeLat', 'storeLng', 'storeMapsUrl', 'deliveryBaseCents', 'deliveryPerKmCents', 'deliveryMinFeeCents', 'deliveryMaxKm',
-  'nextDayEnabled', 'nextDayFeeCents',
+  'nextDayEnabled', 'nextDayFeeCents', 'hideWithoutPhoto',
 ];
 
 /** Only the editable fields (the API rejects unknown ones such as reserved payment columns). */

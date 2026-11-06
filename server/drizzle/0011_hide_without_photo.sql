@@ -1,0 +1,1 @@
+ALTER TABLE "shop_settings" ADD COLUMN "hide_without_photo" boolean DEFAULT true NOT NULL;

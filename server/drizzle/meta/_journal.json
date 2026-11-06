@@ -78,6 +78,13 @@
       "when": 1793964895593,
       "tag": "0010_admin_audit",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1793965315703,
+      "tag": "0011_hide_without_photo",
+      "breakpoints": true
     }
   ]
 }

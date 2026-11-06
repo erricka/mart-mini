@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, gt, ilike, or, sql, type SQL } from 'drizzle-orm';
+import { and, asc, desc, eq, gt, ilike, isNotNull, or, sql, type SQL } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { config } from '../config.js';
@@ -165,6 +165,7 @@ export async function publicRoutes(app: FastifyInstance) {
   });
 
   app.get('/categories', async () => {
+    const hide = (await getSettings()).hideWithoutPhoto;
     const rows = await db
       .select({
         id: categories.id,
@@ -173,12 +174,13 @@ export async function publicRoutes(app: FastifyInstance) {
         slug: categories.slug,
         emoji: categories.emoji,
         color: categories.color,
-        productCount: sql<number>`(select count(*)::int from products p where p.category_id = ${categories.id} and p.active)`,
+        productCount: sql<number>`(select count(*)::int from products p where p.category_id = "categories"."id" and p.active and (${hide} = false or p.image_url is not null))`,
       })
       .from(categories)
       .where(eq(categories.active, true))
       .orderBy(asc(categories.sortOrder), asc(categories.name));
-    return { categories: rows.map(({ nameEn, ...c }) => ({ ...c, name: pick(c.name, nameEn) })) };
+    // Categories with nothing to show are left out.
+    return { categories: rows.filter((c) => c.productCount > 0).map(({ nameEn, ...c }) => ({ ...c, name: pick(c.name, nameEn) })) };
   });
 
   app.get('/products', async (req) => {
@@ -193,6 +195,8 @@ export async function publicRoutes(app: FastifyInstance) {
       req.query,
     );
     const where: SQL[] = [eq(products.active, true), sql`exists (select 1 from categories c where c.id = ${products.categoryId} and c.active)`];
+    // The owner can show only products that have a photo.
+    if ((await getSettings()).hideWithoutPhoto) where.push(isNotNull(products.imageUrl));
     if (q.categoryId) where.push(eq(products.categoryId, q.categoryId));
     if (q.q) {
       const like = `%${escapeLike(q.q)}%`;
@@ -212,7 +216,7 @@ export async function publicRoutes(app: FastifyInstance) {
   app.get('/products/:id', async (req) => {
     const { id } = parse(idParam, req.params);
     const [p] = await db.select().from(products).where(and(eq(products.id, id), eq(products.active, true)));
-    if (!p) throw notFound(tr('err.product_gone'));
+    if (!p || ((await getSettings()).hideWithoutPhoto && !p.imageUrl)) throw notFound(tr('err.product_gone'));
     const [category] = await db.select().from(categories).where(eq(categories.id, p.categoryId));
     return {
       product: publicProduct(p),

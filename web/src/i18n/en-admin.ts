@@ -179,6 +179,8 @@ export const enAdmin = {
   'ap.new_category': '+ New category',
   'ap.cat_products': '{n} products',
   'br.title': 'Branches',
+  'as.hide_no_photo': 'Show only products that have a photo',
+  'as.hide_no_photo_hint': 'Products without a photo stay in your catalog but are hidden from customers until you add one (Catalog → No photo).',
   'log.title': 'Recent admin activity',
   'log.hint': 'Every change made in this dashboard is recorded: who did it and when.',
   'log.none': 'No changes yet.',

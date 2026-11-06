@@ -379,7 +379,7 @@ export function Checkout() {
           <div className="mt-3 space-y-2">
             <BranchChoice branches={branchList} selectedId={q?.branch?.id ?? d.branchId} onPick={(id) => set({ branchId: id })} />
             {branchList.length > 1 && !d.pin && (
-              <button className="flex items-center gap-1.5 text-sm font-semibold text-brand" onClick={findNearest}>
+              <button className="flex items-center gap-1.5 text-left text-sm font-semibold text-brand" onClick={findNearest}>
                 <LocateFixed className="h-4 w-4" />
                 {t('co.find_nearest')}
               </button>

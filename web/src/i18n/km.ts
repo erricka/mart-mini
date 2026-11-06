@@ -130,7 +130,7 @@ export const km: Record<keyof typeof en, string> = {
   'home.all_unlocked': 'អ្នកបានដោះសោគោលដៅទាំងអស់ហើយ — អស្ចារ្យណាស់!',
   'home.in_progress': 'មានការបញ្ជាទិញ {n} កំពុងដំណើរការ',
   'home.track': 'តាមដាន',
-  'home.search': 'ស្វែងរក អង្ករ ស្វាយ កាហ្វេ…',
+  'home.search': 'ស្វែងរក សាប៊ូ កៅអី ធុង…',
   'home.free_delivery': 'ដឹកជញ្ជូនឥតគិតថ្លៃ សម្រាប់ការបញ្ជាទិញលើសពី {amount}',
   'home.aisles': 'ទិញតាមប្រភេទ',
   'home.on_sale': 'បញ្ចុះតម្លៃថ្ងៃនេះ',

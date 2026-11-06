@@ -231,6 +231,8 @@ export const shopSettings = pgTable(
     /** "I can wait until tomorrow" option with its own flat fee — the same for every address. */
     nextDayEnabled: boolean('next_day_enabled').notNull().default(true),
     nextDayFeeCents: integer('next_day_fee_cents').notNull().default(200),
+    /** Customers only see products that have a photo (the owner's choice, 6 Nov 2026). */
+    hideWithoutPhoto: boolean('hide_without_photo').notNull().default(true),
     pickupAddress: text('pickup_address').notNull().default(''),
     pickupHours: text('pickup_hours').notNull().default(''),
     supportPhone: text('support_phone').notNull().default(''),
